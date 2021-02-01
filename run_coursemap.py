@@ -8,80 +8,24 @@
 # usage:  run_coursemap.py data.csv
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.1 28 January 2021
+# Version 0.2 01 February 2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
 # https://opensource.org/licenses/mit-license.php
 
-import	csv
+import	fitread
 import	pprint
 import	matplotlib.pyplot as plt
 import	numpy as np
+import	os.path
 import	sys
-import	subprocess
-import	multiprocessing as mp
 
 from mpl_toolkits.mplot3d import Axes3D
-from enum import IntEnum, auto
 
 #####
 ##### reading data format
 #####
-
-class runSeries( IntEnum ):	# copy this class as "Series"
-	# colmns of CSV data
-	SECONDS		= 0
-	DISTANCE	= auto()
-	HEARTRATE	= auto()
-	SPEED		= auto()
-	ALTITUDE	= auto()
-	LATITUDE	= auto()
-	LONGITUDE	= auto()
-	GRADE		= auto()
-	TEMPERATURE	= auto()
-	BALANCE		= auto()
-	CADENCE		= auto()
-	VER_OSC		= auto()
-	GCT			= auto()
-	
-	
-class bikeSeries( IntEnum ): # copy this class as "Series"
-	# colmns of CSV data
-	SECONDS		= 0
-	DISTANCE	= auto()
-	POWER		= auto()
-	CADENCE		= auto()	
-	HEARTRATE	= auto()
-	SPEED		= auto()
-	ALTITUDE	= auto()
-	LATITUDE	= auto()
-	LONGITUDE	= auto()
-	GRADE		= auto()
-	TEMPERATURE	= auto()
-	BALANCE		= auto()
-
-
-Series	= runSeries
-#Series	= bikeSeries
-
-
-def speed2pace( val ):
-	v	= float( val )
-	if v >= 10.0:
-		return 3600 / v
-	else:
-		return 360
-
-
-def cadence2pitch( val ):
-	return float( val ) * 2.0
-
-
-def hr2hrr( val ):
-	hr_max	= 180.0
-	hr_rst	= 48.0
-	return ((float( val ) - hr_rst) / (hr_max - hr_rst)) * 100
 
 
 def findinterval( x ):
@@ -138,45 +82,11 @@ def make_gif_mp( base_name ):
 	subprocess.call( "rm -rf " + dir_name, shell=True )
 
 
-#####
-#####	preparation for plot
-#####
-
-if __name__ == "__main__":
-	
-	#####
-	##### files from command-line
-	#####
-	
-	if 2 < len( sys.argv ):
-		print( "error: no files given to plot" )
-		sys.exit( 1 )
-		
-	file = sys.argv[ 1 ]
-	
-	with open( file ) as f:
-		reader	= csv.reader( f )
-		l	= [row for row in reader]
-	
+def plot( ax, lon_s, lat_s, alt_s, distance_s ):
 
 	#####
 	##### data preparation
 	#####	
-
-	##### window function: hann 
-	av_wndw		= 6
-	av_wndw2	= int( av_wndw / 2 )
-	wndw		= np.linspace( -np.pi, np.pi, av_wndw)
-	wndw		= [ 0.5 * (np.cos( z ) + 1.0)	for z in wndw ]
-	wndw		= [ z / sum( wndw ) for z in wndw ]
-
-	data	= [ [ float( v ) for v in row ] for row in l ]
-	data	= np.array( data ).T.tolist()
-	
-	distance_s	= data[ Series.DISTANCE  ][ av_wndw2 : -av_wndw2 ]
-	lat_s		= data[ Series.LATITUDE  ][ av_wndw2 : -av_wndw2 ]
-	lon_s		= data[ Series.LONGITUDE ][ av_wndw2 : -av_wndw2 ]
-	alt_s		= np.convolve( data[ Series.ALTITUDE ], wndw, mode = 'same' )[ av_wndw2 : -av_wndw2 ]
 
 	x_min	= min( lon_s )
 	y_min	= min( lat_s )
@@ -204,21 +114,11 @@ if __name__ == "__main__":
 	ylim	= [ (y_max / 2) - (span / 2), (y_max / 2) + (span / 2) ]
 	zlim	= [ z_min, z_max ]
 
-	dm_interval	= findinterval( data[ Series.DISTANCE ][ -1 ] )
+	dm_interval	= findinterval( data[ "value" ][ "distance" ][ -1 ] )
 
 	#####
 	##### start plotting
 	#####	
-
-	azm	= 45
-	elv	= 45
-	
-	print( "plotting a course " + ("%3d" % azm) + ", " + ("%02d" % elv) )
-	
-	fig	= plt.figure( figsize=( 11, 11 ) )
-	ax	= fig.add_subplot( 111, projection = "3d" )
-	
-	ax.view_init( azim = azm, elev = elv )
 
 	ax.set_xlim( xlim )
 	ax.set_ylim( ylim )
@@ -233,13 +133,10 @@ if __name__ == "__main__":
 	dm_format	= dmformat( dm_interval )
 
 	count	= 0
-	for alt in alt_s:
-		xx	= [ lon_s[ count ], lon_s[ count ] ]	
-		yy	= [ lat_s[ count ], lat_s[ count ] ]
-		zz	= [ alt_s[ count ], z_min ]	
+	for x, y, z in zip( lon_s, lat_s, alt_s ):
 		cc	= cm[ count ]
 		
-		ax.plot( xx, yy, zz, color = cc, alpha = 0.05 )
+		ax.plot( [ x, x ], [ y, y ], [ z, z_min ], color = cc, alpha = 0.05 )
 		
 		if ( dist_marker < distance_s[ count ] ):
 			marktext( ax, lon_s[  count ], lat_s[ count ], alt_s[ count ], 10, (dm_format % dist_marker) + "km", 10, cc, 0.99, "center" )
@@ -260,13 +157,39 @@ if __name__ == "__main__":
 	
 	ax.set_title( "course plot of " + file  )
 	
-	ax.set_xlabel( "longitude (-):west / (+): east¥n[km]"  )
-	ax.set_ylabel( "latiitude (-):south / (+): north¥n[km]" )
+	ax.set_xlabel( "longitude (-):west / (+): east\n[km]"  )
+	ax.set_ylabel( "latiitude (-):south / (+): north\n[km]" )
 	ax.set_zlabel( "altitude [m]" )
 	
 	ax.grid()
+
+
+if __name__ == "__main__":
+	
+	#####
+	##### file read. file name is geven from command-line
+	#####
+	
+	if 2 < len( sys.argv ):
+		print( "error: no files given to plot" )
+		sys.exit( 1 )
+		
+	file = sys.argv[ 1 ]
+	file_name, file_ext = os.path.splitext( file )
+
+	if ".fit" != file_ext.lower():
+		print( "can read .fit format file only" )
+		sys.exit( 1 )
+	
+	data	= fitread.get_data( file, ready3d = True )
+
+	fig	= plt.figure( figsize=( 11, 11 ) )
+	ax	= fig.add_subplot( 111, projection = "3d" )
+	
+	plot( ax, data[ "value" ][ "position_long" ], data[ "value" ][ "position_lat" ], data[ "value" ][ "altitude" ], data[ "value" ][ "distance" ] )
 	
 	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
-	
+
+	ax.view_init( 0, 10 )
 	plt.savefig( "-".join( sys.argv ) + ".png", dpi=600, bbox_inches="tight", pad_inches=0.05 )
 	plt.show()
