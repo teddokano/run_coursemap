@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.csv
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.2 01 February 2021
+# Version 0.4 06-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -99,6 +99,9 @@ def plot( ax, lon_s, lat_s, alt_s, distance_s ):
 	lon_s	= [ (z - x_min) * cx for z in lon_s ]
 	lat_s	= [ (z - y_min) * cy for z in lat_s ]
 
+	x_start	= lon_s[ 0 ]
+	y_start	= lat_s[ 0 ]
+
 	x_max	= max( lon_s )
 	y_max	= max( lat_s )
 	z_max	= max( alt_s )
@@ -110,8 +113,11 @@ def plot( ax, lon_s, lat_s, alt_s, distance_s ):
 	
 	span	*= 1.1
 
-	xlim	= [ (x_max / 2) - (span / 2), (x_max / 2) + (span / 2) ]
-	ylim	= [ (y_max / 2) - (span / 2), (y_max / 2) + (span / 2) ]
+	lon_s	= [ z - x_start for z in lon_s ]
+	lat_s	= [ z - y_start for z in lat_s ]
+
+	xlim	= [ (x_max - span) / 2 - x_start, (x_max + span) / 2 - x_start ]
+	ylim	= [ (y_max - span) / 2 - y_start, (y_max + span) / 2 - y_start ]
 	zlim	= [ z_min, z_max ]
 
 	dm_interval	= findinterval( data[ "value" ][ "distance" ][ -1 ] )
@@ -156,11 +162,12 @@ def plot( ax, lon_s, lat_s, alt_s, distance_s ):
 	marktext( ax, span / 2 + xlim[ 0 ], ylim[ 1 ], z_min, 0, "N", 12, [ 0, 0, 0 ], 0.2, "center" )
 	
 	ax.set_title( "course plot of " + file  )
+	fig.text( 0.8, 0.1, "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap", fontsize = 9, alpha = 0.5, ha = "right" )
 	
 	ax.set_xlabel( "longitude (-):west / (+): east\n[km]"  )
 	ax.set_ylabel( "latiitude (-):south / (+): north\n[km]" )
 	ax.set_zlabel( "altitude [m]" )
-	
+
 	ax.grid()
 
 
@@ -178,7 +185,7 @@ if __name__ == "__main__":
 	file_name, file_ext = os.path.splitext( file )
 
 	if ".fit" != file_ext.lower():
-		print( "can read .fit format file only" )
+		print( "cannot read .fit format file only" )
 		sys.exit( 1 )
 	
 	data	= fitread.get_data( file, ready3d = True )
@@ -190,6 +197,6 @@ if __name__ == "__main__":
 	
 	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
 
-	ax.view_init( 0, 10 )
+	ax.view_init( 50, 72 )
 	plt.savefig( "-".join( sys.argv ) + ".png", dpi=600, bbox_inches="tight", pad_inches=0.05 )
 	plt.show()
