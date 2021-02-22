@@ -10,4 +10,4 @@ type **run_coursemap.py py-plot_test.csv** in command line.
 *NOTE: 
 This code is experimental very early version. Should be optimized for processing speed*
 
-![sample plot](https://raw.githubusercontent.com/teddokano/run_coursemap.py/main/run_coursemap.py-plot_test.csv.png "sample")
+![sample plot](https://raw.githubusercontent.com/teddokano/run_coursemap.py/main/run_coursemap.py_-a_60_-e_60_-m_mid_-o_plot_test.fit.png "sample")
