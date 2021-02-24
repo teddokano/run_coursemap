@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.7 24-February-2021
+# Version 0.8 25-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -364,8 +364,8 @@ if __name__ == "__main__":
 	#####
 	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
 
-	data, s_data	= fitpandas.get_records( args.input_file, filter = REQUIRED_DATA_COLUMNS )
-	
+	data, s_data, units	= fitpandas.get_workout( args.input_file )
+
 	#####
 	##### plot range calculation
 	#####
