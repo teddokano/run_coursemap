@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.6 23-February-2021
+# Version 0.7 24-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -24,6 +24,9 @@ import	sys
 import	argparse
 import	datetime
 from	mpl_toolkits.mplot3d import Axes3D
+import	pytz
+from 	timezonefinder import TimezoneFinder
+
 
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
 K				= 40075.016686
@@ -37,9 +40,9 @@ REQUIRED_DATA_COLUMNS	= [
 	"position_lat"
 ]
 
-#####
-##### reading data format
-#####
+def print_v( s ):
+	if args.verbose:
+		print( s  )
 
 
 def findinterval( x ):
@@ -108,10 +111,10 @@ def limit_values( data ):
 	v_start_deg	= data.iloc[ 0 ][ "position_lat" ]
 	h_start_deg	= data.iloc[ 0 ][ "position_long" ]
  
-	ns_cntr_deg	= (n_deg - s_deg) / 2 + s_deg
-	ew_cntr_deg	= (e_deg - w_deg) / 2 + w_deg
+	v_cntr_deg	= (n_deg - s_deg) / 2 + s_deg
+	h_cntr_deg	= (e_deg - w_deg) / 2 + w_deg
 
-	Rcv			= np.cos( ns_cntr_deg / 180.0 * np.pi )
+	Rcv			= np.cos( v_cntr_deg / 180.0 * np.pi )
 	Cv			= K / 360.0
 	Ch			= (K * Rcv) / 360.0
 
@@ -135,7 +138,8 @@ def limit_values( data ):
 	vh_span_half	= vh_span / 2.0
 	
 	limit_values	= {
-		"cntr_deg"	:	staticmaps.create_latlng( ns_cntr_deg, ew_cntr_deg ),
+		"v_cntr_deg":	v_cntr_deg,
+		"h_cntr_deg":	h_cntr_deg,
 		"north"		:	v_cntr + vh_span_half,		
 		"south"		:	v_cntr - vh_span_half,
 		"east"		:	h_cntr + vh_span_half,
@@ -152,14 +156,22 @@ def limit_values( data ):
 		"fin"		:	data.iloc[ -1 ][ "distance" ]
 	}
 	
-	if args.verbose: print( "  map center: latitude = {}˚, longitude = {}˚".format( v_start_deg, h_start_deg ) )
+	print_v( "  map center: latitude = {}˚, longitude = {}˚".format( v_start_deg, h_start_deg ) )
 	
 	return limit_values
 
 
-def info( s ):
+def get_localtimef( v, h, dt ):
+	tf		= TimezoneFinder()
+	tz		= pytz.timezone( tf.timezone_at( lat = v, lng = h )  )
+	offset	= tz.utcoffset( dt )
+	seconds	= offset.total_seconds()
+	return "{} (UTC{:0=+3}{:02} {})".format( dt + offset, int( seconds // 3600 ), int((seconds % 3600) // 60), tz )
+
+
+def info( s, lv ):
+	dt	= get_localtimef( lv[ "v_cntr_deg" ], lv[ "h_cntr_deg" ], s[ "start_time" ] )
 	sp	= s[ "sport" ]
-	dt	= str( s[ "start_time" ] + datetime.timedelta( hours = 9 ) ) + " (UTC+9)"
 	
 	if sp == "running":
 		avg	= "{}/km".format( fp.second2MS( fp.speed2pace( s[ "avg_speed" ] ) ) )
@@ -171,14 +183,17 @@ def info( s ):
 		sp	= fp.SYMBOL_CHAR[ sp ] + " " + sp
 	"""
 	
-	return "{} for {:.3f}km, {} (avg:{})\n{}".format( sp, s[ "total_distance" ] / 1000.0, fp.second2HMS( s[ "total_timer_time" ] ), avg, dt )
+	str	= "{} for {:.3f}km, {} (avg:{})".format( sp, s[ "total_distance" ] / 1000.0, fp.second2HMS( s[ "total_timer_time" ] ), avg )
+
+	print_v( "  {}\n  started on {}".format( str, dt ) )
+	
+	return "{}\n{}".format( str, dt )
 
 
 def plot( ax, data, lv ):
 
-	#####
 	##### data preparation
-	#####	
+	#####	convert position data from degree (lat, long) to kilometer (offset-zero = start point)
 
 	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( lambda y: lv[ "Cv" ] * (y - data[ "position_lat"  ][ 0 ]) )
 	data[ "position_long" ]	= data[ "position_long" ].apply( lambda x: lv[ "Ch" ] * (x - data[ "position_long" ][ 0 ]) )
@@ -186,9 +201,9 @@ def plot( ax, data, lv ):
 	span	= lv[ "vh_span" ]
 
 	ds	= data[ "distance" ].tolist()
-	dm_interval	= findinterval( ds[ -1 ] - ds[ 0 ])
+	dm_interval	= findinterval( ds[ -1 ] - ds[ 0 ] )	# finding distance marker interval
 
-	if args.verbose: print( "  distance marker interval {}km".format( dm_interval ) )
+	print_v( "  distance marker interval {}km".format( dm_interval ) )
 
 	#####
 	##### start plotting
@@ -266,14 +281,14 @@ def get_map( size_idx, lv ):
 	map_span_by_size	= (K * lv[ "Rcv" ]) / (2 ** zoom_level) * (size / TILE_SIZE)
 	size	= int( np.ceil( size * (lv[ "vh_span" ] / map_span_by_size) ) )
 
-	if args.verbose: 	print( "  reruested max map size = {} pixels (equals to {:.3f}km span)".format( MAP_RESOLUTION[ size_idx ], map_span_by_size ) )
+	print_v( "  reruested max map size = {} pixels (equals to {:.3f}km span)".format( MAP_RESOLUTION[ size_idx ], map_span_by_size ) )
 	if not args.quiet:	print( "  zoom_level = {}, map size = {} pixels".format( zoom_level, size ) )
 	
 	context.set_zoom( zoom_level )	
-	context.set_center( lv[ "cntr_deg" ] )
+	context.set_center( staticmaps.create_latlng( lv[ "v_cntr_deg" ], lv[ "h_cntr_deg" ] ) )
 	image = context.render_cairo( size, size )
 
-#	image.write_to_png("_map_img.png")
+	# image.write_to_png("_map_img.png")
 	
 	buf = image.get_data()
 
@@ -293,56 +308,70 @@ def get_map( size_idx, lv ):
 	ax.plot_surface( surface_x, surface_y, np.atleast_2d( lv[ "bottom" ] ), rstride = stride, cstride = stride, facecolors = arr, shade = False )
 	
 	return	arr
-	
-	
-if __name__ == "__main__":
-	
-	#####
-	##### file read. file name is geven from command-line
-	#####
 
+
+def command_line_handling():
 	parser		= argparse.ArgumentParser( description = "plots 3D course map in from .fit file" )
 	map_group	= parser.add_mutually_exclusive_group()
 	qv_group	= parser.add_mutually_exclusive_group()
 	
-	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, 		default = 60 )
+	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, default =  60 )
 	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86,  )
 	parser.add_argument(       "--start",			help = "set start point", 					type = float, default =   0,  )
 	parser.add_argument(       "--fin",				help = "set finish point", 					type = float, default = float("inf"),  )
-	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1,  )
-	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1,  )
+	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default =  0.1,  )
+	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default =  0.1,  )
 	parser.add_argument( "-o", "--output_to_file", 	help = "output to file = ON", action = "store_true" )
-	parser.add_argument( "input_file",			help = "input file (.fit format)" )
+	parser.add_argument( "input_file",				help = "input file (.fit format)" )
+	qv_group.add_argument( "-v", "--verbose", 		help = "verbose mode", action = "store_true" )
+	qv_group.add_argument( "-q", "--quiet", 		help = "quiet mode",   action = "store_true" )
 	map_group.add_argument( "-m", "--map_resolution", 	help = "map resolution", default = "low", choices=[ "low", "mid", "high" ] )
 	map_group.add_argument( "-n", "--no_map", 			help = "no map shown", action = "store_true" )
-	qv_group.add_argument( "-v", "--verbose", 			help = "verbose mode", action = "store_true" )
-	qv_group.add_argument( "-q", "--quiet", 			help = "quiet mode",   action = "store_true" )
 	
-	args	= parser.parse_args()
-	output_filename	= "_".join( sys.argv ) + ".png"
+	return	parser.parse_args()
 
+	
+if __name__ == "__main__":
+
+	#####
+	##### command line interface handling
+	#####
+	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file ) )
+	
+	args	= command_line_handling()
+	
 	file_name, file_ext = os.path.splitext( args.input_file )
 
 	if ".fit" != file_ext.lower():
 		print( "cannot read .fit format file only" )
 		sys.exit( 1 )
 
-	if args.verbose: print( "\"{}\" started".format( sys.argv[ 0 ] )  )
+	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
 		
-	if not args.quiet:
+	output_filename	= "_".join( sys.argv ) + ".png"
+
+	if args.verbose:
 		print( "setting:" )
-		print( "  elevation         = {}˚".format( args.elevation )  )
+		print( "  elevation         = {}˚".format( args.elevation ) )
 		print( "  azimuth           = {}˚".format( args.azimuth ) )
 		print( "  map_resolution    = {} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )  )
-		print( "  no_map            = {}".format( args.no_map )  )
-		print( "  alpha for map     = {}".format( args.map_alpha )  )
-		print( "  alpha for curtain = {}".format( args.curtain_alpha )  )
+		print( "  no_map            = {}".format( args.no_map ) )
+		print( "  alpha for map     = {}".format( args.map_alpha ) )
+		print( "  alpha for curtain = {}".format( args.curtain_alpha ) )
 		print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
 
-	if args.verbose: print( "reading file: \"{}\"".format( args.input_file )  )
+	#####
+	##### .fit file reading
+	#####
+	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
 
 	data, s_data	= fp.get_records( args.input_file, filter = REQUIRED_DATA_COLUMNS )
 	
+	#####
+	##### plot range calculation
+	#####
+	if not args.quiet: print( "calculating plot range..." )
+
 	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
 	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fp.semicircles2dgree )
 	data[ "position_long" ]	= data[ "position_long" ].apply( fp.semicircles2dgree )
@@ -351,36 +380,47 @@ if __name__ == "__main__":
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
 	data.reset_index(inplace=True, drop=True)	
 
+	lim_val	= limit_values( data )
+
+	#####
+	##### plot settings
+	#####
 	fig	= plt.figure( figsize=( 11, 11 ) )
 	ax	= fig.add_subplot( 111, projection = "3d" )
 
-	if not args.quiet: print( "calculating settings..." )
-	lim_val	= limit_values( data )
+	# ax.set_title( "course plot of " + args.input_file  )
+	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
+	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
+	fig.text( 0.8, 0.1, FOOTNOTE, fontsize = 9, alpha = 0.5, ha = "right" )	
 
 	if not args.quiet:
 		print( "plot values:" )
-		print( "  latitude  - north : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
-		print( "            - south : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
-		print( "  longitude - east  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
-		print( "            - west  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
-		print( "  altitude  - top   : {:.1f}m".format( lim_val[ "top" ] )  )
-		print( "            - bottom: {:.1f}m".format( lim_val[ "bottom" ] )  )
-		print( "  course distance   : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
+		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
+		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
+		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
+		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
+		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top" ] )  )
+		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
+		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
 
+	#####
+	##### getting/drawing map
+	#####
 	if not args.no_map:
 		if not args.quiet: print( "getting map data and draw..." )
 		map_arr	= get_map( args.map_resolution, lim_val )
 	
+	#####
+	##### 3D course plot
+	#####
 	if not args.quiet: print( "3D prot in progress..." )
 	plot( ax, data, lim_val )
 
 	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
 
-#	ax.set_title( "course plot of " + args.input_file  )
-	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
-	fig.text( 0.8, 0.92, info( s_data ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
-	fig.text( 0.8, 0.1, FOOTNOTE, fontsize = 9, alpha = 0.5, ha = "right" )	
-
+	#####
+	##### output to file | screen
+	#####
 	ax.view_init( args.elevation, args.azimuth )
 
 	if args.output_to_file:
@@ -388,5 +428,4 @@ if __name__ == "__main__":
 		plt.savefig( output_filename, dpi=600, bbox_inches="tight", pad_inches=0.05 )
 
 	if not args.quiet: print( "output to screen..." )
-	
 	plt.show()
