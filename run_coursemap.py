@@ -336,8 +336,6 @@ if __name__ == "__main__":
 	#####
 	##### command line interface handling
 	#####
-	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file ) )
-	
 	args	= command_line_handling()
 	
 	file_name, file_ext = os.path.splitext( args.input_file )
