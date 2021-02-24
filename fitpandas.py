@@ -6,7 +6,7 @@
 #	reference: http://johannesjacob.com/2019/03/13/analyze-your-cycling-data-python/
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.4 25-February-2021
+# Version 0.4.1 25-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -28,7 +28,7 @@ def get_workout( file ):
 			r[ record_data.name ]	= record_data.value
 			if record_data.units:
 				units[ record_data.name ]	= record_data.units
-		workout.append(r)
+		workout.append( r )
 	
 	session	= {}
 	
@@ -50,4 +50,14 @@ if __name__ == "__main__":
 		sys.exit( 1 )
 		
 	df, session, units	= get_workout( sys.argv[ 1 ] )
+	
+	output_filename	= "_df_" + "_".join( sys.argv ) + ".csv"
+	df.to_csv( output_filename )
+	print( '\n---- data written into file: "{}"'.format( output_filename ) )
+	
+	print( "\n---- list of 'session' and 'units' data" )
+	for k in sorted( set( [*session] + [*units] ) ):
+		print( "{:<30}{:>30}{:>15}".format( k, str( session.get( k, "---" ) ), str( units.get( k, "---" ) ) ) )
+		
+	print( "\n---- 'DataFrame' data" )
 	print( df )
