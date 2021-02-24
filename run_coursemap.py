@@ -14,7 +14,8 @@
 # Released under the MIT license
 # https://opensource.org/licenses/mit-license.php
 
-import	fitpandas as fp
+import	fitpandas
+import	fitpandas_util as fu
 import	staticmaps
 import	pprint
 import	matplotlib.pyplot as plt
@@ -174,16 +175,16 @@ def info( s, lv ):
 	sp	= s[ "sport" ]
 	
 	if sp == "running":
-		avg	= "{}/km".format( fp.second2MS( fp.speed2pace( s[ "avg_speed" ] ) ) )
+		avg	= "{}/km".format( fu.second2MS( fu.speed2pace( s[ "avg_speed" ] ) ) )
 	else:
 		avg	= "{:.2f}km/h".format( s[ "avg_speed" ] * 3.6 )
 	"""
-	if sp in fp.SYMBOL_CHAR.keys():
-		print( fp.SYMBOL_CHAR[ sp ] )
-		sp	= fp.SYMBOL_CHAR[ sp ] + " " + sp
+	if sp in fu.SYMBOL_CHAR.keys():
+		print( fu.SYMBOL_CHAR[ sp ] )
+		sp	= fu.SYMBOL_CHAR[ sp ] + " " + sp
 	"""
 	
-	str	= "{} for {:.3f}km, {} (avg:{})".format( sp, s[ "total_distance" ] / 1000.0, fp.second2HMS( s[ "total_timer_time" ] ), avg )
+	str	= "{} for {:.3f}km, {} (avg:{})".format( sp, s[ "total_distance" ] / 1000.0, fu.second2HMS( s[ "total_timer_time" ] ), avg )
 
 	print_v( "  {}\n  started on {}".format( str, dt ) )
 	
@@ -363,7 +364,7 @@ if __name__ == "__main__":
 	#####
 	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
 
-	data, s_data	= fp.get_records( args.input_file, filter = REQUIRED_DATA_COLUMNS )
+	data, s_data	= fitpandas.get_records( args.input_file, filter = REQUIRED_DATA_COLUMNS )
 	
 	#####
 	##### plot range calculation
@@ -371,8 +372,8 @@ if __name__ == "__main__":
 	if not args.quiet: print( "calculating plot range..." )
 
 	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
-	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fp.semicircles2dgree )
-	data[ "position_long" ]	= data[ "position_long" ].apply( fp.semicircles2dgree )
+	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
+	data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
 
 	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
@@ -393,10 +394,10 @@ if __name__ == "__main__":
 
 	if not args.quiet:
 		print( "plot values:" )
-		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
-		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
-		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
-		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fp.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
+		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
+		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
+		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
+		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
 		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top" ] )  )
 		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
 		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
