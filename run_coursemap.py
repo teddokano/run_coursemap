@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.8 25-February-2021
+# Version 0.8.1 26-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -41,64 +41,98 @@ REQUIRED_DATA_COLUMNS	= [
 	"position_lat"
 ]
 
-def print_v( s ):
-	if args.verbose:
-		print( s  )
 
+def main():	
+	file_name, file_ext = os.path.splitext( args.input_file )
 
-def findinterval( x ):
-	e	= np.floor(np.log10( x ) )
-	m	= x / (10 ** e)
+	if ".fit" != file_ext.lower():
+		print( "cannot read .fit format file only" )
+		sys.exit( 1 )
 
-	if ( m <= 2 ):
-		r	= 1
-	elif ( m <= 5 ):
-		r	= 2
-	else:
-		r	= 5
-	
-	r	*= (10 ** (e-1))
-	
-	return ( r )
-
-
-def dmformat( di ):
-	e	= 0 - np.floor( np.log10( di ) )
-	if ( 0 < e ):
-		f	= "%." + "{:.0f}".format( 0 - np.floor( np.log10( di ) ) ) + "f"
-	else:
-		f	= "%.0f"
-	return ( f )
-
-
-def marktext( ax, x, y, z, dotsize, text, textsize, color, av, align ):
-	ax.scatter(   x, y, z, s = dotsize,	color = color,	alpha = av )
-	ax.text( 	  x, y, z, text,		color = color,	alpha = av, size = textsize, ha = align, va = "bottom" )
-
-
-def save_gif_mp( v ):
-	file_name, i	= v
-	elv		= (np.cos( 1 * (i / 720) * 2 * np.pi) ) * 0.5 + 0.5
-	print( "plotting rotating image " + ("%3d" % i) )
-	
-	plt.gca().view_init( azim = i - 90, elev = 84 * elv + 5 )
-	plt.savefig( file_name + ("%03d" % i) + ".png" )
-
-
-def make_gif_mp( base_name ):
-	print( "make_gif" )
-	dir_name	= "temp_3d_" + base_name + "/"
-	file_name	= dir_name + base_name
-	subprocess.call( "mkdir " + dir_name, shell=True)
-	fig.set_size_inches( 13, 11 )
-
-	for i in range( 720 ):
-		save_gif_mp( (file_name, i) )
+	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
 		
-	cmd = "convert -delay 4 -layers Optimize " + dir_name + base_name+ "*.png " + base_name + ".gif"
-	subprocess.call(cmd, shell=True) 
-	subprocess.call( "rm -rf " + dir_name, shell=True )
+	output_filename	= "_".join( sys.argv ) + ".png"
+
+	if args.verbose:
+		print( "setting:" )
+		print( "  elevation         = {}˚".format( args.elevation ) )
+		print( "  azimuth           = {}˚".format( args.azimuth ) )
+		print( "  map_resolution    = {} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )  )
+		print( "  no_map            = {}".format( args.no_map ) )
+		print( "  alpha for map     = {}".format( args.map_alpha ) )
+		print( "  alpha for curtain = {}".format( args.curtain_alpha ) )
+		print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
+
+	#####
+	##### .fit file reading
+	#####
+	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
+
+	data, s_data, units	= fitpandas.get_workout( args.input_file )
+
+	#####
+	##### plot range calculation
+	#####
+	if not args.quiet: print( "calculating plot range..." )
+
+	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
+	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
+	data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
+
+	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
+	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
+	data.reset_index(inplace=True, drop=True)	
+
+	lim_val	= limit_values( data )
+
+	#####
+	##### plot settings
+	#####
+	fig	= plt.figure( figsize=( 11, 11 ) )
+	ax	= fig.add_subplot( 111, projection = "3d" )
+
+	# ax.set_title( "course plot of " + args.input_file  )
+	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
+	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
+	fig.text( 0.8, 0.1, FOOTNOTE, fontsize = 9, alpha = 0.5, ha = "right" )	
+
+	if not args.quiet:
+		print( "plot values:" )
+		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
+		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
+		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
+		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
+		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top" ] )  )
+		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
+		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
+
+	#####
+	##### getting/drawing map
+	#####
+	if not args.no_map:
+		if not args.quiet: print( "getting map data and draw..." )
+		map_arr	= get_map( ax, args.map_resolution, lim_val )
 	
+	#####
+	##### 3D course plot
+	#####
+	if not args.quiet: print( "3D prot in progress..." )
+	plot( ax, data, lim_val )
+
+	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
+
+	#####
+	##### output to file | screen
+	#####
+	ax.view_init( args.elevation, args.azimuth )
+
+	if args.output_to_file:
+		if not args.quiet: print( "output to file..." )
+		plt.savefig( output_filename, dpi=600, bbox_inches="tight", pad_inches=0.05 )
+
+	if not args.quiet: print( "output to screen..." )
+	plt.show()
+
 
 def limit_values( data ):	
 	stat	= data.describe()
@@ -259,7 +293,37 @@ def plot( ax, data, lv ):
 	return	limit_values
 
 
-def get_map( size_idx, lv ):
+def findinterval( x ):
+	e	= np.floor(np.log10( x ) )
+	m	= x / (10 ** e)
+
+	if ( m <= 2 ):
+		r	= 1
+	elif ( m <= 5 ):
+		r	= 2
+	else:
+		r	= 5
+	
+	r	*= (10 ** (e-1))
+	
+	return ( r )
+
+
+def dmformat( di ):
+	e	= 0 - np.floor( np.log10( di ) )
+	if ( 0 < e ):
+		f	= "%." + "{:.0f}".format( 0 - np.floor( np.log10( di ) ) ) + "f"
+	else:
+		f	= "%.0f"
+	return ( f )
+
+
+def marktext( ax, x, y, z, dotsize, text, textsize, color, av, align ):
+	ax.scatter(	x, y, z, s = dotsize,	color = color,	alpha = av )
+	ax.text(	x, y, z, text,			color = color,	alpha = av, size = textsize, ha = align, va = "bottom" )
+
+
+def get_map( axis, size_idx, lv ):
 	context	= staticmaps.Context()
 	context.set_tile_provider( staticmaps.tile_provider_OSM )
 	
@@ -306,7 +370,7 @@ def get_map( size_idx, lv ):
 	surface_y	= [  y  for y in np.linspace( lv[ "south" ],  lv[ "north" ] , size ) ]
 
 	stride	= 1
-	ax.plot_surface( surface_x, surface_y, np.atleast_2d( lv[ "bottom" ] ), rstride = stride, cstride = stride, facecolors = arr, shade = False )
+	axis.plot_surface( surface_x, surface_y, np.atleast_2d( lv[ "bottom" ] ), rstride = stride, cstride = stride, facecolors = arr, shade = False )
 	
 	return	arr
 
@@ -331,100 +395,41 @@ def command_line_handling():
 	
 	return	parser.parse_args()
 
+
+def print_v( s ):
+	if args.verbose:
+		print( s  )
+
+
+def arktext( ax, x, y, z, dotsize, text, textsize, color, av, align ):
+	ax.scatter(   x, y, z, s = dotsize,	color = color,	alpha = av )
+	ax.text( 	  x, y, z, text,		color = color,	alpha = av, size = textsize, ha = align, va = "bottom" )
+
+
+def save_gif_mp( v ):
+	file_name, i	= v
+	elv		= (np.cos( 1 * (i / 720) * 2 * np.pi) ) * 0.5 + 0.5
+	print( "plotting rotating image " + ("%3d" % i) )
+	
+	plt.gca().view_init( azim = i - 90, elev = 84 * elv + 5 )
+	plt.savefig( file_name + ("%03d" % i) + ".png" )
+
+
+def make_gif_mp( base_name ):
+	print( "make_gif" )
+	dir_name	= "temp_3d_" + base_name + "/"
+	file_name	= dir_name + base_name
+	subprocess.call( "mkdir " + dir_name, shell=True)
+	fig.set_size_inches( 13, 11 )
+
+	for i in range( 720 ):
+		save_gif_mp( (file_name, i) )
+		
+	cmd = "convert -delay 4 -layers Optimize " + dir_name + base_name+ "*.png " + base_name + ".gif"
+	subprocess.call(cmd, shell=True) 
+	subprocess.call( "rm -rf " + dir_name, shell=True )
+	
 	
 if __name__ == "__main__":
-
-	#####
-	##### command line interface handling
-	#####
 	args	= command_line_handling()
-	
-	file_name, file_ext = os.path.splitext( args.input_file )
-
-	if ".fit" != file_ext.lower():
-		print( "cannot read .fit format file only" )
-		sys.exit( 1 )
-
-	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
-		
-	output_filename	= "_".join( sys.argv ) + ".png"
-
-	if args.verbose:
-		print( "setting:" )
-		print( "  elevation         = {}˚".format( args.elevation ) )
-		print( "  azimuth           = {}˚".format( args.azimuth ) )
-		print( "  map_resolution    = {} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )  )
-		print( "  no_map            = {}".format( args.no_map ) )
-		print( "  alpha for map     = {}".format( args.map_alpha ) )
-		print( "  alpha for curtain = {}".format( args.curtain_alpha ) )
-		print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
-
-	#####
-	##### .fit file reading
-	#####
-	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
-
-	data, s_data, units	= fitpandas.get_workout( args.input_file )
-
-	#####
-	##### plot range calculation
-	#####
-	if not args.quiet: print( "calculating plot range..." )
-
-	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
-	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
-	data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
-
-	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
-	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
-	data.reset_index(inplace=True, drop=True)	
-
-	lim_val	= limit_values( data )
-
-	#####
-	##### plot settings
-	#####
-	fig	= plt.figure( figsize=( 11, 11 ) )
-	ax	= fig.add_subplot( 111, projection = "3d" )
-
-	# ax.set_title( "course plot of " + args.input_file  )
-	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
-	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
-	fig.text( 0.8, 0.1, FOOTNOTE, fontsize = 9, alpha = 0.5, ha = "right" )	
-
-	if not args.quiet:
-		print( "plot values:" )
-		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
-		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
-		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
-		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
-		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top" ] )  )
-		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
-		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
-
-	#####
-	##### getting/drawing map
-	#####
-	if not args.no_map:
-		if not args.quiet: print( "getting map data and draw..." )
-		map_arr	= get_map( args.map_resolution, lim_val )
-	
-	#####
-	##### 3D course plot
-	#####
-	if not args.quiet: print( "3D prot in progress..." )
-	plot( ax, data, lim_val )
-
-	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
-
-	#####
-	##### output to file | screen
-	#####
-	ax.view_init( args.elevation, args.azimuth )
-
-	if args.output_to_file:
-		if not args.quiet: print( "output to file..." )
-		plt.savefig( output_filename, dpi=600, bbox_inches="tight", pad_inches=0.05 )
-
-	if not args.quiet: print( "output to screen..." )
-	plt.show()
+	main()
