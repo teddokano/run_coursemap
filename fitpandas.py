@@ -6,7 +6,7 @@
 #	reference: http://johannesjacob.com/2019/03/13/analyze-your-cycling-data-python/
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.4.1 25-February-2021
+# Version 0.4.2 26-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -40,11 +40,9 @@ def get_workout( file ):
 	
 	return pd.DataFrame( workout ), session, units
 
-
-
 import	sys
 
-if __name__ == "__main__":
+def main():
 	if 2 < len( sys.argv ):
 		print( "error: no files given" )
 		sys.exit( 1 )
@@ -61,3 +59,7 @@ if __name__ == "__main__":
 		
 	print( "\n---- 'DataFrame' data" )
 	print( df )
+
+
+if __name__ == "__main__":
+	main()
