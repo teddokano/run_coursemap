@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.9 28-February-2021
+# Version 0.9.1 01-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -67,9 +67,14 @@ def main():
 
 	if ".fit" == file_suffix:
 		data, s_data, units	= fitpandas.get_workout( args.input_file )
+		
 		data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
 		data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
-
+		s_data[ "nec_lat"  ]	= fu.semicircles2dgree( s_data[ "nec_lat"  ] )
+		s_data[ "swc_lat"  ]	= fu.semicircles2dgree( s_data[ "swc_lat"  ] )
+		s_data[ "nec_long" ]	= fu.semicircles2dgree( s_data[ "nec_long" ] )
+		s_data[ "swc_long" ]	= fu.semicircles2dgree( s_data[ "swc_long" ] )
+		
 	elif ".gpx" == file_suffix:
 		data, s_data, units	= gpxpandas.get_course( args.input_file )
 
@@ -99,11 +104,11 @@ def main():
 
 	if not args.quiet:
 		print( "plot values:" )
-		print( "  latitude  - north  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_lat"   ] ), lim_val[ "north" ] )  )
-		print( "            - south  : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_lat"   ] ), lim_val[ "south" ] )  )
-		print( "  longitude - east   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "nec_long"  ] ), lim_val[ "east"  ] )  )
-		print( "            - west   : {:+.5f}˚ as {:+.3f}km".format( fu.semicircles2dgree( s_data[ "swc_long"  ] ), lim_val[ "west"  ] )  )
-		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top" ] )  )
+		print( "  latitude  - north  : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "nec_lat"  ], lim_val[ "north" ] )  )
+		print( "            - south  : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_lat"  ], lim_val[ "south" ] )  )
+		print( "  longitude - east   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "nec_long" ], lim_val[ "east"  ] )  )
+		print( "            - west   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_long" ], lim_val[ "west"  ] )  )
+		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top"    ] )  )
 		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
 		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
 
