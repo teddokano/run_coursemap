@@ -6,7 +6,7 @@
 #	reference: http://johannesjacob.com/2019/03/13/analyze-your-cycling-data-python/
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.4.2 26-February-2021
+# Version 0.4.3 27-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -16,11 +16,11 @@ import	pandas as pd
 import	fitparse
 
 
-def get_workout( file ):
+def get_workout( file_name ):
 	workout	= []
 	units	= {}
 	
-	fitfile = fitparse.FitFile( file )
+	fitfile = fitparse.FitFile( file_name )
 	
 	for record in fitfile.get_messages( "record" ):
 		r	= {}
@@ -43,7 +43,7 @@ def get_workout( file ):
 import	sys
 
 def main():
-	if 2 < len( sys.argv ):
+	if len( sys.argv ) < 2:
 		print( "error: no files given" )
 		sys.exit( 1 )
 		

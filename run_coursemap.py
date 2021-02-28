@@ -3,21 +3,21 @@
 # run_coursemap.py
 # 
 # script for running course map in 3D. 
-# plotting 3D course from .fit file
+# plotting 3D course from .fit or .gpx file
 # 
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.8.1 26-February-2021
+# Version 0.9 28-February-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
 # https://opensource.org/licenses/mit-license.php
 
 import	fitpandas
+import	gpxpandas
 import	fitpandas_util as fu
 import	staticmaps
-import	pprint
 import	matplotlib.pyplot as plt
 import	numpy as np
 import	os.path
@@ -45,12 +45,9 @@ REQUIRED_DATA_COLUMNS	= [
 def main():	
 	file_name, file_ext = os.path.splitext( args.input_file )
 
-	if ".fit" != file_ext.lower():
-		print( "cannot read .fit format file only" )
-		sys.exit( 1 )
-
 	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
-		
+	
+	file_suffix	= file_ext.lower()
 	output_filename	= "_".join( sys.argv ) + ".png"
 
 	if args.verbose:
@@ -64,20 +61,24 @@ def main():
 		print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
 
 	#####
-	##### .fit file reading
+	##### data file reading
 	#####
 	if not args.quiet: print( "reading file: \"{}\"".format( args.input_file )  )
 
-	data, s_data, units	= fitpandas.get_workout( args.input_file )
+	if ".fit" == file_suffix:
+		data, s_data, units	= fitpandas.get_workout( args.input_file )
+		data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
+		data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
+
+	elif ".gpx" == file_suffix:
+		data, s_data, units	= gpxpandas.get_course( args.input_file )
+
+	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
 
 	#####
 	##### plot range calculation
 	#####
 	if not args.quiet: print( "calculating plot range..." )
-
-	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
-	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( fu.semicircles2dgree )
-	data[ "position_long" ]	= data[ "position_long" ].apply( fu.semicircles2dgree )
 
 	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
@@ -196,14 +197,6 @@ def limit_values( data ):
 	return limit_values
 
 
-def get_localtimef( v, h, dt ):
-	tf		= TimezoneFinder()
-	tz		= pytz.timezone( tf.timezone_at( lat = v, lng = h )  )
-	offset	= tz.utcoffset( dt )
-	seconds	= offset.total_seconds()
-	return "{} (UTC{:0=+3}{:02} {})".format( dt + offset, int( seconds // 3600 ), int((seconds % 3600) // 60), tz )
-
-
 def info( s, lv ):
 	dt	= get_localtimef( lv[ "v_cntr_deg" ], lv[ "h_cntr_deg" ], s[ "start_time" ] )
 	sp	= s[ "sport" ]
@@ -212,6 +205,7 @@ def info( s, lv ):
 		avg	= "{}/km".format( fu.second2MS( fu.speed2pace( s[ "avg_speed" ] ) ) )
 	else:
 		avg	= "{:.2f}km/h".format( s[ "avg_speed" ] * 3.6 )
+		
 	"""
 	if sp in fu.SYMBOL_CHAR.keys():
 		print( fu.SYMBOL_CHAR[ sp ] )
@@ -223,6 +217,27 @@ def info( s, lv ):
 	print_v( "  {}\n  started on {}".format( str, dt ) )
 	
 	return "{}\n{}".format( str, dt )
+
+
+def get_localtimef( v, h, dt ):
+	tf	= TimezoneFinder()
+	tz	= pytz.timezone( tf.timezone_at( lat = v, lng = h ) )
+
+	if dt.tzinfo:
+		dt.replace( tzinfo = None )
+	else:
+		dt	+= tz.utcoffset( dt )
+		dt	 = tz.localize( dt )
+		
+	return "{}".format( dt.astimezone( tz ) )
+
+
+def get_localtimef_pre( v, h, dt ):
+	tf		= TimezoneFinder()
+	tz		= pytz.timezone( tf.timezone_at( lat = v, lng = h ) )
+	offset	= tz.utcoffset( dt )
+	seconds	= offset.total_seconds()
+	return "{} (UTC{:0=+3}{:02} {})".format( dt + offset, int( seconds // 3600 ), int((seconds % 3600) // 60), tz )
 
 
 def plot( ax, data, lv ):

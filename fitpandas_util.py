@@ -7,6 +7,8 @@
 # Released under the MIT license
 # https://opensource.org/licenses/mit-license.php
 
+from datetime import timedelta
+
 CHAR_BICYCLIST	= chr( 0x1F6B4 )
 CHAR_RUNNER		= chr( 0x1F3C3 )
 CHAR_PEDESTRIAN	= chr( 0x1F6B6 )
@@ -47,13 +49,20 @@ def cadence2pitch( v ):
 
 
 def second2MS( s ):
+	if isinstance( s, timedelta ):
+		s	= s.total_seconds()
+
 	s	= round( s )
 	str	= "{:1}:{:02}".format( s // 60, s % 60 )
 	return str
     
 
 def second2HMS( s ):
+	if isinstance( s, timedelta ):
+		s	= s.total_seconds()
+
 	s	= round( s )
+		
 	str	= "{}h{:02}m{:02}s".format( s // 3600, (s % 3600) // 60, s % 60 )
 	return str
     
