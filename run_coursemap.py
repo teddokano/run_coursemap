@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.9.1 01-March-2021
+# Version 0.10 2-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -32,7 +32,7 @@ from 	timezonefinder import TimezoneFinder
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
 K				= 40075.016686
 OVERSIZE_RATIO	= 1.1
-MAP_RESOLUTION	= { "low": 256, "mid": 512, "high": 1024 }
+MAP_RESOLUTION	= { "low": 256, "mid": 512, "high": 1024, "no": "" }
 
 REQUIRED_DATA_COLUMNS	= [ 	
 	"distance", 
@@ -50,15 +50,7 @@ def main():
 	file_suffix	= file_ext.lower()
 	output_filename	= "_".join( sys.argv ) + ".png"
 
-	if args.verbose:
-		print( "setting:" )
-		print( "  elevation         = {}˚".format( args.elevation ) )
-		print( "  azimuth           = {}˚".format( args.azimuth ) )
-		print( "  map_resolution    = {} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )  )
-		print( "  no_map            = {}".format( args.no_map ) )
-		print( "  alpha for map     = {}".format( args.map_alpha ) )
-		print( "  alpha for curtain = {}".format( args.curtain_alpha ) )
-		print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
+	if args.verbose:	show_given_parameters( output_filename )
 
 	#####
 	##### data file reading
@@ -78,7 +70,7 @@ def main():
 	elif ".gpx" == file_suffix:
 		data, s_data, units	= gpxpandas.get_course( args.input_file )
 
-	data[ "distance"      ]	= data[ "distance"      ].apply( lambda x: x / 1000.0 )
+	data[ "distance" ]	= data[ "distance" ].apply( lambda x: x / 1000.0 )	# convert from meter to kilometer
 
 	#####
 	##### plot range calculation
@@ -108,14 +100,14 @@ def main():
 		print( "            - south  : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_lat"  ], lim_val[ "south" ] )  )
 		print( "  longitude - east   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "nec_long" ], lim_val[ "east"  ] )  )
 		print( "            - west   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_long" ], lim_val[ "west"  ] )  )
-		print( "  altitude  - top    : {:.1f}m".format( lim_val[ "top"    ] )  )
-		print( "            - bottom : {:.1f}m".format( lim_val[ "bottom" ] )  )
-		print( "  course distance    : {:.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
+		print( "  altitude  - top    : {:5.1f}m".format( lim_val[ "top"    ] )  )
+		print( "            - bottom : {:5.1f}m".format( lim_val[ "bottom" ] )  )
+		print( "  course distance    : {:7.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
 
 	#####
 	##### getting/drawing map
 	#####
-	if not args.no_map:
+	if args.map_resolution != "no":
 		if not args.quiet: print( "getting map data and draw..." )
 		map_arr	= get_map( ax, args.map_resolution, lim_val )
 	
@@ -253,7 +245,11 @@ def plot( ax, data, lv ):
 	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( lambda y: lv[ "Cv" ] * (y - data[ "position_lat"  ][ 0 ]) )
 	data[ "position_long" ]	= data[ "position_long" ].apply( lambda x: lv[ "Ch" ] * (x - data[ "position_long" ][ 0 ]) )
 
+
 	span	= lv[ "vh_span" ]
+	
+	if args.thining_factor < 1:	args.thining_factor	= 1   
+	data	= data[ ::args.thining_factor ]
 
 	ds	= data[ "distance" ].tolist()
 	dm_interval	= findinterval( ds[ -1 ] - ds[ 0 ] )	# finding distance marker interval
@@ -351,7 +347,12 @@ def get_map( axis, size_idx, lv ):
 	# reference: https://wiki.openstreetmap.org/wiki/Zoom_levels
 	# reference: https://wiki.openstreetmap.org/wiki/Tiles
 	
-	ZOOM_SCALE		= [ 360, 180, 90, 45, 22.5, 11.25, 5.625, 2.813, 1.406, 0.703, 0.352, 0.176, 0.088, 0.044, 0.022, 0.011, 0.005, 0.003, 0.001, 0.0005, 0.00025 ]
+	ZOOM_SCALE		= [ 360,
+		180,	90,		45,		22.5, 	11.25, 	
+		5.625, 	2.813,	1.406,	0.703,	0.352,	
+		0.176,	0.088,	0.044,	0.022,	0.011,	
+		0.005,	0.003,	0.001,	0.0005, 0.00025
+	]
 	TILE_SIZE		= 256.0
 
 	size	= MAP_RESOLUTION[ size_idx ]
@@ -396,24 +397,48 @@ def get_map( axis, size_idx, lv ):
 
 
 def command_line_handling():
-	parser		= argparse.ArgumentParser( description = "plots 3D course map in from .fit file" )
-	map_group	= parser.add_mutually_exclusive_group()
-	qv_group	= parser.add_mutually_exclusive_group()
+	parser	= argparse.ArgumentParser( description = "plots 3D course map in from .fit file" )
+	qv_grp	= parser.add_mutually_exclusive_group()
 	
+	parser.add_argument( "input_file",				help = "input file (.fit or .gpx format)" )
 	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, default =  60 )
-	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86,  )
-	parser.add_argument(       "--start",			help = "set start point", 					type = float, default =   0,  )
-	parser.add_argument(       "--fin",				help = "set finish point", 					type = float, default = float("inf"),  )
-	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default =  0.1,  )
-	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default =  0.1,  )
-	parser.add_argument( "-o", "--output_to_file", 	help = "output to file = ON", action = "store_true" )
-	parser.add_argument( "input_file",				help = "input file (.fit format)" )
-	qv_group.add_argument( "-v", "--verbose", 		help = "verbose mode", action = "store_true" )
-	qv_group.add_argument( "-q", "--quiet", 		help = "quiet mode",   action = "store_true" )
-	map_group.add_argument( "-m", "--map_resolution", 	help = "map resolution", default = "low", choices=[ "low", "mid", "high" ] )
-	map_group.add_argument( "-n", "--no_map", 			help = "no map shown", action = "store_true" )
+	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86 )
+	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",	choices=[ "low", "mid", "high", "no" ], default = "low" )
+	parser.add_argument(       "--start",			help = "set start point", 					type = float, default =   0 )
+	parser.add_argument(       "--fin",				help = "set finish point", 					type = float, default = float("inf") )
+	parser.add_argument( "-t", "--thining_factor",	help = "data point thining out ratio",		type = int,   default =   1 )
+	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1 )
+	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
+	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",	action = "store_true" )
+	qv_grp.add_argument( "-v", "--verbose", 		help = "verbose mode",			action = "store_true" )
+	qv_grp.add_argument( "-q", "--quiet", 			help = "quiet mode",			action = "store_true" )
 	
 	return	parser.parse_args()
+
+
+def show_given_parameters( output_filename ):
+	if args.map_resolution == "no":
+		map_setting	= "no map shown"
+	else:
+		map_setting	= "{} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )
+
+	if args.fin == float( "inf" ):
+		finish_setting	= "maximum"
+	else:
+		finish_setting	= "{:4.1f}km".format( args.fin )
+		
+	print( "setting:" )
+	print( "  input file        = \"{}\"˚".format( args.input_file ) )
+	print( "  elevation         = {:4}˚".format( args.elevation ) )
+	print( "  azimuth           = {:4}˚".format( args.azimuth ) )
+	print( "  map_resolution    = {}".format( map_setting ) )
+	print( "  plot start        = {:4.1f}km".format( args.start ) )
+	print( "  plot finish       = {}".format( finish_setting ) )
+	print( "  thining out ratio = {}".format( args.thining_factor ) )
+	print( "  alpha for map     = {}".format( args.map_alpha ) )
+	print( "  alpha for curtain = {}".format( args.curtain_alpha ) )
+	print( "  verbose/quiet     = {}/{}".format( args.verbose, args.quiet ) )
+	print( "  output_to_file    = {}{}".format( args.output_to_file, ", file name: \"" + output_filename + "\"" if args.output_to_file else "" )  )
 
 
 def print_v( s ):
