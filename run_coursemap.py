@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.10 2-March-2021
+# Version 0.11 3-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -32,7 +32,7 @@ from 	timezonefinder import TimezoneFinder
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
 K				= 40075.016686
 OVERSIZE_RATIO	= 1.1
-MAP_RESOLUTION	= { "low": 256, "mid": 512, "high": 1024, "no": "" }
+MAP_RESOLUTION	= { "low": 256, "mid": 512, "high": 1024, "off": "" }
 
 REQUIRED_DATA_COLUMNS	= [ 	
 	"distance", 
@@ -96,10 +96,10 @@ def main():
 
 	if not args.quiet:
 		print( "plot values:" )
-		print( "  latitude  - north  : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "nec_lat"  ], lim_val[ "north" ] )  )
-		print( "            - south  : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_lat"  ], lim_val[ "south" ] )  )
-		print( "  longitude - east   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "nec_long" ], lim_val[ "east"  ] )  )
-		print( "            - west   : {:+10.5f}˚ as {:+.3f}km".format( s_data[ "swc_long" ], lim_val[ "west"  ] )  )
+		print( "  latitude  - north  : {:+10.5f}˚ as {:+8.3f}km".format( s_data[ "nec_lat"  ], lim_val[ "north" ] )  )
+		print( "            - south  : {:+10.5f}˚ as {:+8.3f}km".format( s_data[ "swc_lat"  ], lim_val[ "south" ] )  )
+		print( "  longitude - east   : {:+10.5f}˚ as {:+8.3f}km".format( s_data[ "nec_long" ], lim_val[ "east"  ] )  )
+		print( "            - west   : {:+10.5f}˚ as {:+8.3f}km".format( s_data[ "swc_long" ], lim_val[ "west"  ] )  )
 		print( "  altitude  - top    : {:5.1f}m".format( lim_val[ "top"    ] )  )
 		print( "            - bottom : {:5.1f}m".format( lim_val[ "bottom" ] )  )
 		print( "  course distance    : {:7.3f}km".format( data.iloc[ -1 ][ "distance" ] - data.iloc[ 0 ][ "distance" ])  )
@@ -107,7 +107,7 @@ def main():
 	#####
 	##### getting/drawing map
 	#####
-	if args.map_resolution != "no":
+	if args.map_resolution != "off":
 		if not args.quiet: print( "getting map data and draw..." )
 		map_arr	= get_map( ax, args.map_resolution, lim_val )
 	
@@ -135,17 +135,15 @@ def main():
 def limit_values( data ):	
 	stat	= data.describe()
 	
-	n_deg		= stat[ "position_lat"  ][ "max" ]
-	s_deg		= stat[ "position_lat"  ][ "min" ]
-	e_deg		= stat[ "position_long" ][ "max" ]
-	w_deg		= stat[ "position_long" ][ "min" ]
-	v_start_deg	= data[ "position_lat"  ][ 0 ]
-	h_start_deg	= data[ "position_long" ][ 0 ]
+	s_deg, n_deg	= stat[ "position_lat"  ][ "min" ], stat[ "position_lat"  ][ "max" ]
+	w_deg, e_deg	= stat[ "position_long" ][ "min" ], stat[ "position_long" ][ "max" ]
 	v_start_deg	= data.iloc[ 0 ][ "position_lat" ]
 	h_start_deg	= data.iloc[ 0 ][ "position_long" ]
  
-	v_cntr_deg	= (n_deg - s_deg) / 2 + s_deg
-	h_cntr_deg	= (e_deg - w_deg) / 2 + w_deg
+	v_span_deg	= n_deg - s_deg
+	h_span_deg	= e_deg - w_deg
+	v_cntr_deg	= v_span_deg / 2 + s_deg
+	h_cntr_deg	= h_span_deg / 2 + w_deg
 
 	Rcv			= np.cos( v_cntr_deg / 180.0 * np.pi )
 	Cv			= K / 360.0
@@ -170,6 +168,13 @@ def limit_values( data ):
 	vh_span	*= OVERSIZE_RATIO
 	vh_span_half	= vh_span / 2.0
 	
+	if not args.negative_alt:
+		bottom	= stat[ "altitude" ][ "min" ]
+		if bottom < 0:
+			data[ "altitude" ]	= data[ "altitude" ].apply( lambda x: x - bottom )
+			stat[ "altitude" ][ "min" ]	-= bottom,
+			stat[ "altitude" ][ "max" ]	-= bottom,		
+	
 	limit_values	= {
 		"v_cntr_deg":	v_cntr_deg,
 		"h_cntr_deg":	h_cntr_deg,
@@ -190,6 +195,69 @@ def limit_values( data ):
 	}
 	
 	print_v( "  map center: latitude = {}˚, longitude = {}˚".format( v_start_deg, h_start_deg ) )
+	
+	#####
+	##### altitude data filtering options
+	#####
+	if args.alt_filt == "off":
+		return limit_values
+		
+	if args.alt_filt == "avg":
+	
+		#####
+		##### spacial filtering
+		#####
+		
+		am_size	= 300
+		olr		= 2
+		span_d	= v_span_deg if h_span_deg < v_span_deg else h_span_deg
+		
+		altmap	= [ [ [] for j in range( am_size + olr * 2 ) ] for i in range( am_size + olr * 2 ) ]
+		
+		for i in range( len( data ) ):
+			lat, long, alt	= data.iloc[ i ][ "position_lat" ], data.iloc[ i ][ "position_long" ], data.iloc[ i ][ "altitude" ]
+			y	= int( (lat  - s_deg) * Rcv / span_d * (am_size - 1) )
+			x	= int( (long - w_deg)       / span_d * (am_size - 1) )	
+			for p in range( olr * 2 + 1 ):	
+				for q in range( olr * 2 + 1 ):	
+					altmap[ x + p ][ y + q ].append( alt )
+			
+		for p in range( am_size ):
+			for q in range( am_size ):
+				x	= p + olr
+				y	= q + olr
+				if altmap[ x ][ y ] != 0:
+					t	= altmap[ x ][ y ]
+					if 0 == len( t ):
+						altmap[ x ][ y ]	= 0
+					else:
+						altmap[ x ][ y ]	= sum( t )/len( t )
+
+		z	= []
+		for i in range( len( data ) ):
+			lat, long	= data.iloc[ i ][ "position_lat" ], data.iloc[ i ][ "position_long" ]
+			y	= int( (lat  - s_deg) * Rcv / span_d * (am_size - 1) ) + olr
+			x	= int( (long - w_deg)       / span_d * (am_size - 1) ) + olr
+			z.append( altmap[ x ][ y ] )
+	else:
+		z	= data[ "altitude" ]
+	
+	#####
+	##### temporal filtering
+	#####
+	WNDW_LEN	= 10
+	WL_HALF		= WNDW_LEN // 2
+	WINDOW		= [ 0.5 * (np.cos( z ) + 1.0)	for z in np.linspace( -np.pi, np.pi, WNDW_LEN) ]
+	WINDOW		= [ x / sum( WINDOW ) for x in WINDOW ]
+
+	z	= np.append( np.full( WL_HALF, z[  0 ] ), z )
+	z	= np.append( z, np.full( WL_HALF, z[ -1 ] ) )
+	z	= np.convolve( z, WINDOW, mode = 'same' )[ WL_HALF : -WL_HALF ]
+	
+	limit_values[ "bottom" ]	= min( z )
+	limit_values[ "top"    ]	= max( z )
+
+	data[ "altitude" ]	= z
 	
 	return limit_values
 
@@ -244,7 +312,6 @@ def plot( ax, data, lv ):
 
 	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( lambda y: lv[ "Cv" ] * (y - data[ "position_lat"  ][ 0 ]) )
 	data[ "position_long" ]	= data[ "position_long" ].apply( lambda x: lv[ "Ch" ] * (x - data[ "position_long" ][ 0 ]) )
-
 
 	span	= lv[ "vh_span" ]
 	
@@ -403,21 +470,23 @@ def command_line_handling():
 	parser.add_argument( "input_file",				help = "input file (.fit or .gpx format)" )
 	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, default =  60 )
 	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86 )
-	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",	choices=[ "low", "mid", "high", "no" ], default = "low" )
+	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",		choices=[ "low", "mid", "high", "off" ], default = "low" )
+	parser.add_argument( "-f", "--alt_filt",		help = "altitude filtering",	choices=[ "norm", "avg", "off" ], default = "avg" )
 	parser.add_argument(       "--start",			help = "set start point", 					type = float, default =   0 )
 	parser.add_argument(       "--fin",				help = "set finish point", 					type = float, default = float("inf") )
 	parser.add_argument( "-t", "--thining_factor",	help = "data point thining out ratio",		type = int,   default =   1 )
 	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1 )
 	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
-	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",	action = "store_true" )
-	qv_grp.add_argument( "-v", "--verbose", 		help = "verbose mode",			action = "store_true" )
-	qv_grp.add_argument( "-q", "--quiet", 			help = "quiet mode",			action = "store_true" )
+	parser.add_argument( "-n", "--negative_alt",	help = "negative altitude enable",	action = "store_true" )
+	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",		action = "store_true" )
+	qv_grp.add_argument( "-v", "--verbose", 		help = "verbose mode",				action = "store_true" )
+	qv_grp.add_argument( "-q", "--quiet", 			help = "quiet mode",				action = "store_true" )
 	
 	return	parser.parse_args()
 
 
 def show_given_parameters( output_filename ):
-	if args.map_resolution == "no":
+	if args.map_resolution == "off":
 		map_setting	= "no map shown"
 	else:
 		map_setting	= "{} (max resolution = {} pixels)".format( args.map_resolution, MAP_RESOLUTION[ args.map_resolution ] )
@@ -432,6 +501,8 @@ def show_given_parameters( output_filename ):
 	print( "  elevation         = {:4}˚".format( args.elevation ) )
 	print( "  azimuth           = {:4}˚".format( args.azimuth ) )
 	print( "  map_resolution    = {}".format( map_setting ) )
+	print( "  altitude filter   = {}".format( args.alt_filt ) )
+	print( "  negative alt en   = {}".format( args.negative_alt ) )
 	print( "  plot start        = {:4.1f}km".format( args.start ) )
 	print( "  plot finish       = {}".format( finish_setting ) )
 	print( "  thining out ratio = {}".format( args.thining_factor ) )
