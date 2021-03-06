@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.11 3-March-2021
+# Version 0.12 6-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -81,7 +81,7 @@ def main():
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
 	data.reset_index(inplace=True, drop=True)	
 
-	lim_val	= limit_values( data )
+	lim_val	= fu.limit_values( data, args )
 
 	#####
 	##### plot settings
@@ -132,136 +132,6 @@ def main():
 	plt.show()
 
 
-def limit_values( data ):	
-	stat	= data.describe()
-	
-	s_deg, n_deg	= stat[ "position_lat"  ][ "min" ], stat[ "position_lat"  ][ "max" ]
-	w_deg, e_deg	= stat[ "position_long" ][ "min" ], stat[ "position_long" ][ "max" ]
-	v_start_deg	= data.iloc[ 0 ][ "position_lat" ]
-	h_start_deg	= data.iloc[ 0 ][ "position_long" ]
- 
-	v_span_deg	= n_deg - s_deg
-	h_span_deg	= e_deg - w_deg
-	v_cntr_deg	= v_span_deg / 2 + s_deg
-	h_cntr_deg	= h_span_deg / 2 + w_deg
-
-	Rcv			= np.cos( v_cntr_deg / 180.0 * np.pi )
-	Cv			= K / 360.0
-	Ch			= (K * Rcv) / 360.0
-
-	north	= Cv * (n_deg - v_start_deg)
-	south	= Cv * (s_deg - v_start_deg)
-	east	= Ch * (e_deg - h_start_deg)
-	west	= Ch * (w_deg - h_start_deg)
-	
-	v_span	= north - south
-	h_span	= east  - west
-	
-	v_cntr	= v_span / 2 + south
-	h_cntr	= h_span / 2 + west
-
-	if  h_span < v_span:
-		vh_span	= v_span
-	else:
-		vh_span	= h_span
-
-	vh_span	*= OVERSIZE_RATIO
-	vh_span_half	= vh_span / 2.0
-	
-	if not args.negative_alt:
-		bottom	= stat[ "altitude" ][ "min" ]
-		if bottom < 0:
-			data[ "altitude" ]	= data[ "altitude" ].apply( lambda x: x - bottom )
-			stat[ "altitude" ][ "min" ]	-= bottom,
-			stat[ "altitude" ][ "max" ]	-= bottom,		
-	
-	limit_values	= {
-		"v_cntr_deg":	v_cntr_deg,
-		"h_cntr_deg":	h_cntr_deg,
-		"north"		:	v_cntr + vh_span_half,		
-		"south"		:	v_cntr - vh_span_half,
-		"east"		:	h_cntr + vh_span_half,
-		"west"		:	h_cntr - vh_span_half,
-		"bottom"	:	stat[ "altitude" ][ "min" ],
-		"top"		:	stat[ "altitude" ][ "max" ],
-		"v_cntr"	:	v_cntr,
-		"h_cntr"	:	h_cntr,
-		"vh_span" 	:	vh_span,
-		"Rcv"		:	Rcv,
-		"Cv"		:	Cv,
-		"Ch"		:	Ch,
-		"start"		:	data.iloc[  0 ][ "distance" ],
-		"fin"		:	data.iloc[ -1 ][ "distance" ]
-	}
-	
-	print_v( "  map center: latitude = {}˚, longitude = {}˚".format( v_start_deg, h_start_deg ) )
-	
-	#####
-	##### altitude data filtering options
-	#####
-	if args.alt_filt == "off":
-		return limit_values
-		
-	if args.alt_filt == "avg":
-	
-		#####
-		##### spacial filtering
-		#####
-		
-		am_size	= 300
-		olr		= 2
-		span_d	= v_span_deg if h_span_deg < v_span_deg else h_span_deg
-		
-		altmap	= [ [ [] for j in range( am_size + olr * 2 ) ] for i in range( am_size + olr * 2 ) ]
-		
-		for i in range( len( data ) ):
-			lat, long, alt	= data.iloc[ i ][ "position_lat" ], data.iloc[ i ][ "position_long" ], data.iloc[ i ][ "altitude" ]
-			y	= int( (lat  - s_deg) * Rcv / span_d * (am_size - 1) )
-			x	= int( (long - w_deg)       / span_d * (am_size - 1) )	
-			for p in range( olr * 2 + 1 ):	
-				for q in range( olr * 2 + 1 ):	
-					altmap[ x + p ][ y + q ].append( alt )
-			
-		for p in range( am_size ):
-			for q in range( am_size ):
-				x	= p + olr
-				y	= q + olr
-				if altmap[ x ][ y ] != 0:
-					t	= altmap[ x ][ y ]
-					if 0 == len( t ):
-						altmap[ x ][ y ]	= 0
-					else:
-						altmap[ x ][ y ]	= sum( t )/len( t )
-
-		z	= []
-		for i in range( len( data ) ):
-			lat, long	= data.iloc[ i ][ "position_lat" ], data.iloc[ i ][ "position_long" ]
-			y	= int( (lat  - s_deg) * Rcv / span_d * (am_size - 1) ) + olr
-			x	= int( (long - w_deg)       / span_d * (am_size - 1) ) + olr
-			z.append( altmap[ x ][ y ] )
-	else:
-		z	= data[ "altitude" ]
-	
-	#####
-	##### temporal filtering
-	#####
-	WNDW_LEN	= 10
-	WL_HALF		= WNDW_LEN // 2
-	WINDOW		= [ 0.5 * (np.cos( z ) + 1.0)	for z in np.linspace( -np.pi, np.pi, WNDW_LEN) ]
-	WINDOW		= [ x / sum( WINDOW ) for x in WINDOW ]
-
-	z	= np.append( np.full( WL_HALF, z[  0 ] ), z )
-	z	= np.append( z, np.full( WL_HALF, z[ -1 ] ) )
-	z	= np.convolve( z, WINDOW, mode = 'same' )[ WL_HALF : -WL_HALF ]
-	
-	limit_values[ "bottom" ]	= min( z )
-	limit_values[ "top"    ]	= max( z )
-
-	data[ "altitude" ]	= z
-	
-	return limit_values
-
-
 def info( s, lv ):
 	dt	= get_localtimef( lv[ "v_cntr_deg" ], lv[ "h_cntr_deg" ], s[ "start_time" ] )
 	sp	= s[ "sport" ]
@@ -271,17 +141,26 @@ def info( s, lv ):
 	else:
 		avg	= "{:.2f}km/h".format( s[ "avg_speed" ] * 3.6 )
 		
+	if args.map_resolution != "off":
+		start_place		= fu.get_city_name( lv[ "start_lat"    ], lv[ "start_long"    ] )
+		farend_place	= fu.get_city_name( lv[ "farthest_lat" ], lv[ "farthest_long" ]  )
+		if start_place == farend_place:
+			place	= start_place
+		else:
+			place	= "{} - {}".format( start_place, farend_place )
+	else:
+		place	= ""
+
 	"""
 	if sp in fu.SYMBOL_CHAR.keys():
 		print( fu.SYMBOL_CHAR[ sp ] )
 		sp	= fu.SYMBOL_CHAR[ sp ] + " " + sp
 	"""
 	
-	str	= "{} for {:.3f}km, {} (avg:{})".format( sp, s[ "total_distance" ] / 1000.0, fu.second2HMS( s[ "total_timer_time" ] ), avg )
-
+	str		= "{} for {:.3f}km, {} (avg:{})".format( sp, s[ "total_distance" ] / 1000.0, fu.second2HMS( s[ "total_timer_time" ] ), avg )
 	print_v( "  {}\n  started on {}".format( str, dt ) )
 	
-	return "{}\n{}".format( str, dt )
+	return "{}\n{}\n{}".format( str, dt, place )
 
 
 def get_localtimef( v, h, dt ):
@@ -306,13 +185,6 @@ def get_localtimef_pre( v, h, dt ):
 
 
 def plot( ax, data, lv ):
-
-	##### data preparation
-	#####	convert position data from degree (lat, long) to kilometer (offset-zero = start point)
-
-	data[ "position_lat"  ]	= data[ "position_lat"  ].apply( lambda y: lv[ "Cv" ] * (y - data[ "position_lat"  ][ 0 ]) )
-	data[ "position_long" ]	= data[ "position_long" ].apply( lambda x: lv[ "Ch" ] * (x - data[ "position_long" ][ 0 ]) )
-
 	span	= lv[ "vh_span" ]
 	
 	if args.thining_factor < 1:	args.thining_factor	= 1   
@@ -339,9 +211,9 @@ def plot( ax, data, lv ):
 	dist_marker	= (ds[ 0 ] // dm_interval + 1) * dm_interval
 	dm_format	= dmformat( dm_interval )
 
-	xs	= data[ "position_long" ].tolist()
-	ys	= data[ "position_lat"  ].tolist()
-	zs	= data[ "altitude"      ].tolist()
+	xs	= data[ "long_km"  ].tolist()
+	ys	= data[ "lat_km"   ].tolist()
+	zs	= data[ "altitude" ].tolist()
 
 	count		= 0
 	 
@@ -372,8 +244,6 @@ def plot( ax, data, lv ):
 	ax.set_ylabel( "latiitude (-):south / (+): north\n[km]" )
 	ax.set_zlabel( "altitude [m]" )
 	ax.grid()
-	
-	return	limit_values
 
 
 def findinterval( x ):
@@ -549,3 +419,4 @@ def make_gif_mp( base_name ):
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
+
