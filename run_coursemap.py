@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.12 6-March-2021
+# Version 0.12.1 6-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -30,6 +30,7 @@ from 	timezonefinder import TimezoneFinder
 
 
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
+OSM_CREDIT		= "Maps & data © OpenStreetMap contributors"
 K				= 40075.016686
 OVERSIZE_RATIO	= 1.1
 MAP_RESOLUTION	= { "low": 256, "mid": 512, "high": 1024, "off": "" }
@@ -92,7 +93,7 @@ def main():
 	# ax.set_title( "course plot of " + args.input_file  )
 	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
 	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
-	fig.text( 0.8, 0.1, FOOTNOTE, fontsize = 9, alpha = 0.5, ha = "right" )	
+	fig.text( 0.8, 0.1, FOOTNOTE + "\n" + (OSM_CREDIT if args.map_resolution != "off" else ""), fontsize = 9, alpha = 0.5, ha = "right" )	
 
 	if not args.quiet:
 		print( "plot values:" )
@@ -419,4 +420,5 @@ def make_gif_mp( base_name ):
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
+
 
