@@ -262,8 +262,8 @@ def get_city_name( lat, long ):
 				else:
 					s	= location.raw[ "address" ][ label ]
 					
-				print( "place name was found \"{}\" as {}".format( location.raw[ "address" ][ label ], label ) )
-				print( location.raw[ "address" ] )
+				# print( "place name was found \"{}\" as {}".format( location.raw[ "address" ][ label ], label ) )
+				# print( location.raw[ "address" ] )
 				break
 	
 	return s
