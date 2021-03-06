@@ -2,7 +2,7 @@
 
 # utility routines for fitpandas
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.5 6-March-2021
+# Version 0.5.1 6-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -244,7 +244,9 @@ def reverse_geocoding( lat, long ):
 	 
 
 def get_city_name( lat, long ):
-	ctv	= [ "city", "town", "village", "suburb" ]
+	ctv	= [ "tourism", "islet", "island", "borough", "suburb", "village", "town", "city", "quarter" ]
+		# https://wiki.openstreetmap.org/wiki/JA:Key:place
+		
 	s	= ""
 	
 	location	= reverse_geocoding( lat, long )
@@ -252,6 +254,7 @@ def get_city_name( lat, long ):
 	for label in ctv:
 		if label in location.raw[ "address" ].keys():
 			s	= location.raw[ "address" ][ label ]
+			break
 	
 	return s
 	
