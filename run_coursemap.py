@@ -8,7 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.12.1 6-March-2021
+# Version 0.14 14-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -27,6 +27,8 @@ import	datetime
 from	mpl_toolkits.mplot3d import Axes3D
 import	pytz
 from 	timezonefinder import TimezoneFinder
+import	subprocess
+import	pickle
 
 
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
@@ -49,7 +51,7 @@ def main():
 	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
 	
 	file_suffix	= file_ext.lower()
-	output_filename	= "_".join( sys.argv ) + ".png"
+	output_filename	= "_".join( sys.argv )
 
 	if args.verbose:	show_given_parameters( output_filename )
 
@@ -80,9 +82,13 @@ def main():
 
 	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
-	data.reset_index(inplace=True, drop=True)	
+	data.reset_index( inplace = True, drop = True )	
 
 	lim_val	= fu.limit_values( data, args )
+
+	if args.screen_off and not args.output_to_file:
+		print( "no plot processed since \"--screen_off\" option given without \"-o\" (output to file)" )
+		return	# do nothing and quit
 
 	#####
 	##### plot settings
@@ -118,19 +124,29 @@ def main():
 	if not args.quiet: print( "3D prot in progress..." )
 	plot( ax, data, lim_val )
 
-	# make_gif_mp( "-".join( sys.argv ) ) # <-- to make GIF animation. enabling this will take time to process
 
 	#####
 	##### output to file | screen
 	#####
+
+	if args.pickle_output:
+		if not args.quiet: print( "output pickle data..." )
+		with open( output_filename + ".pickle", 'wb') as ofs:
+			pickle.dump( fig, ofs )
+
+	if args.gifanm:
+		if not args.quiet: print( "making GIF animation..." )
+		make_gif_mp( "-".join( sys.argv ), fig ) # <-- to make GIF animation. enabling this will take time to process
+
 	ax.view_init( args.elevation, args.azimuth )
 
 	if args.output_to_file:
-		if not args.quiet: print( "output to file..." )
-		plt.savefig( output_filename, dpi=600, bbox_inches="tight", pad_inches=0.05 )
+		if not args.quiet: print( "output to .png file..." )
+		plt.savefig( output_filename + ".png", dpi=600, bbox_inches="tight", pad_inches=0.05 )
 
-	if not args.quiet: print( "output to screen..." )
-	plt.show()
+	if not args.screen_off:
+		if not args.quiet: print( "output to screen..." )
+		plt.show()
 
 
 def info( s, lv ):
@@ -144,7 +160,7 @@ def info( s, lv ):
 		
 	if args.map_resolution != "off":
 		start_place		= fu.get_city_name( lv[ "start_lat"    ], lv[ "start_long"    ] )
-		farend_place	= fu.get_city_name( lv[ "farthest_lat" ], lv[ "farthest_long" ]  )
+		farend_place	= fu.get_city_name( lv[ "farthest_lat" ], lv[ "farthest_long" ] )
 		if start_place == farend_place:
 			place	= start_place
 		else:
@@ -204,11 +220,14 @@ def plot( ax, data, lv ):
 	ax.set_ylim( [ lv[ "south"  ],  lv[ "north" ] ] )
 	ax.set_zlim( [ lv[ "bottom" ],  lv[ "top"   ] ] )
 
+	"""
 	trace_lngth	= len( data[ "altitude" ] )
 	cm			= plt.get_cmap( "jet" )
 	cm_interval	= [ i / trace_lngth for i in range(1, trace_lngth + 1) ]
 	cm			= cm( cm_interval )
-
+	"""
+	cm	= fu.color_map( len( data[ "altitude" ] ) )
+	
 	dist_marker	= (ds[ 0 ] // dm_interval + 1) * dm_interval
 	dm_format	= dmformat( dm_interval )
 
@@ -278,9 +297,7 @@ def marktext( ax, x, y, z, dotsize, text, textsize, color, av, align ):
 
 
 def get_map( axis, size_idx, lv ):
-	context	= staticmaps.Context()
-	context.set_tile_provider( staticmaps.tile_provider_OSM )
-	
+
 	# finding zoom level
 	# reference: https://wiki.openstreetmap.org/wiki/Zoom_levels
 	# reference: https://wiki.openstreetmap.org/wiki/Tiles
@@ -308,6 +325,8 @@ def get_map( axis, size_idx, lv ):
 	print_v( "  reruested max map size = {} pixels (equals to {:.3f}km span)".format( MAP_RESOLUTION[ size_idx ], map_span_by_size ) )
 	if not args.quiet:	print( "  zoom_level = {}, map size = {} pixels".format( zoom_level, size ) )
 	
+	context	= staticmaps.Context()
+	context.set_tile_provider( staticmaps.tile_provider_OSM )	
 	context.set_zoom( zoom_level )	
 	context.set_center( staticmaps.create_latlng( lv[ "v_cntr_deg" ], lv[ "h_cntr_deg" ] ) )
 	image = context.render_cairo( size, size )
@@ -316,11 +335,10 @@ def get_map( axis, size_idx, lv ):
 	
 	buf = image.get_data()
 
-	arri = np.ndarray( shape=( size, size, 4 ), dtype = np.uint8, buffer = buf )
-	ar	= [ x / 255.0 for x in arri ]
-	ar	= np.array( ar )
+	arri	= np.ndarray( shape=( size, size, 4 ), dtype = np.uint8, buffer = buf ).astype(np.uint8)
+	ar		= np.array( arri / 255.0, dtype = np.float16 )
+	arr		= np.ndarray( shape=( size, size, 4 ), dtype = np.float16 )
 	
-	arr	= np.ndarray( shape=( size, size, 4 ), dtype = np.float32 )
 	for x in range( size ):
 		for y in range( size ):
 			arr[ y ][ (size - 1) - x ]	= [ ar[ x ][ y ][ 2 ], ar[ x ][ y ][ 1 ], ar[ x ][ y ][ 0 ], args.map_alpha ]
@@ -330,7 +348,7 @@ def get_map( axis, size_idx, lv ):
 
 	stride	= 1
 	axis.plot_surface( surface_x, surface_y, np.atleast_2d( lv[ "bottom" ] ), rstride = stride, cstride = stride, facecolors = arr, shade = False )
-	
+
 	return	arr
 
 
@@ -350,6 +368,9 @@ def command_line_handling():
 	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
 	parser.add_argument( "-n", "--negative_alt",	help = "negative altitude enable",	action = "store_true" )
 	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",		action = "store_true" )
+	parser.add_argument( "-p", "--pickle_output",	help = "output to .pickle = ON",	action = "store_true" )
+	parser.add_argument( 	   "--screen_off",		help = "output to screen = OFF",	action = "store_true" )
+	parser.add_argument( 	   "--gifanm",			help = "make GIF animation",		action = "store_true" )
 	qv_grp.add_argument( "-v", "--verbose", 		help = "verbose mode",				action = "store_true" )
 	qv_grp.add_argument( "-q", "--quiet", 			help = "quiet mode",				action = "store_true" )
 	
@@ -388,37 +409,27 @@ def print_v( s ):
 		print( s  )
 
 
-def arktext( ax, x, y, z, dotsize, text, textsize, color, av, align ):
-	ax.scatter(   x, y, z, s = dotsize,	color = color,	alpha = av )
-	ax.text( 	  x, y, z, text,		color = color,	alpha = av, size = textsize, ha = align, va = "bottom" )
-
-
-def save_gif_mp( v ):
-	file_name, i	= v
-	elv		= (np.cos( 1 * (i / 720) * 2 * np.pi) ) * 0.5 + 0.5
-	print( "plotting rotating image " + ("%3d" % i) )
-	
-	plt.gca().view_init( azim = i - 90, elev = 84 * elv + 5 )
-	plt.savefig( file_name + ("%03d" % i) + ".png" )
-
-
-def make_gif_mp( base_name ):
-	print( "make_gif" )
+def make_gif_mp( base_name, fig ):
 	dir_name	= "temp_3d_" + base_name + "/"
 	file_name	= dir_name + base_name
 	subprocess.call( "mkdir " + dir_name, shell=True)
 	fig.set_size_inches( 13, 11 )
 
-	for i in range( 720 ):
-		save_gif_mp( (file_name, i) )
+	n	= 720
+	for i in range( n ):
+		print( "plotting rotating image {:3}/{}".format( i, n ) )
+		elv		= (np.cos( 1 * (i / n) * 2 * np.pi) ) * 0.5 + 0.5
 		
-	cmd = "convert -delay 4 -layers Optimize " + dir_name + base_name+ "*.png " + base_name + ".gif"
-	subprocess.call(cmd, shell=True) 
+		plt.gca().view_init( azim = i - 90, elev = 84 * elv + 5 )
+		plt.savefig( file_name + ("%03d" % i) + ".png" )
+	
+	if not args.quiet: print( "  converting GIF files into an animation file" )
+	cmd = "convert -delay 4 -layers Optimize " + dir_name + base_name+ "*.png " + base_name + ".gif" # using "ImageMagick" command
+	subprocess.call( cmd, shell = True ) 
 	subprocess.call( "rm -rf " + dir_name, shell=True )
 	
 	
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
-
 
