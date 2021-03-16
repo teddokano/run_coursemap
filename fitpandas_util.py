@@ -2,7 +2,7 @@
 
 # utility routines for fitpandas
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.6 14-March-2021
+# Version 0.7 16-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
 # Released under the MIT license
@@ -11,7 +11,7 @@
 import	numpy as np
 from datetime import timedelta
 from geopy.geocoders import Nominatim
-
+from geopy.distance import great_circle
 
 K				= 40075.016686
 OVERSIZE_RATIO	= 1.1
@@ -211,6 +211,9 @@ def attributes( data ):
 	data[ "long_km" ]	= data[ "position_long" ].apply( lambda x: Ch * (x - data[ "position_long" ][ 0 ]) )
 	data[ "DIST"    ]	= data.apply( lambda x: ( ( x[ "lat_km" ] ** 2 ) + ( x[ "long_km" ] ** 2 ) ) ** 0.5, axis = 1 )
 
+#	print( data[ "lat_km"  ] )
+#	print( data[ "long_km"  ] )
+
 	# data.apply( lambda x: print( "{}, {}".format( x[ "distance" ], x[ "DIST" ] ) ), axis = 1 )
 	i	= data[ "DIST" ].idxmax()
 	attr[ "farthest_lat"  ]	= data[ "position_lat"  ][ i ]
@@ -219,6 +222,10 @@ def attributes( data ):
 	attr[ "start_long"    ]	= data.iloc[  0 ][ "position_long" ]
 
 	return attr
+
+
+def p2p_distance( lat0, long0, lat1, long1 ):
+	return ( great_circle( (lat0, long0), (lat1, long1) ).meters )
 
 
 def filtering( z, len ):
@@ -231,18 +238,6 @@ def filtering( z, len ):
 	z	= np.convolve( z, coeff, mode = 'same' )[ len_half : -len_half ]
 	
 	return z
-
-
-def find_farthest( data ):
-	
-	max	= 0
-	mi	= 0
-	for i in range( len( d ) ):
-		if max < d[ i ]:
-			max	= d[ i ]
-			mi	- i
-			
-	return mi
 
 
 def city_name_list( data ):
