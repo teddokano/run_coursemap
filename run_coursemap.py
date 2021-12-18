@@ -8,6 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
+# Version 0.20 19-Decemer-2021  # curtain color can be changed by altitude/speed/power
 # Version 0.14 14-March-2021
 
 # Copyright (c) 2021 Tedd OKANO
@@ -29,6 +30,7 @@ import	pytz
 from 	timezonefinder import TimezoneFinder
 import	subprocess
 import	pickle
+import	pandas as pd
 
 
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
@@ -43,6 +45,46 @@ REQUIRED_DATA_COLUMNS	= [
 	"position_long", 
 	"position_lat"
 ]
+
+COLORKEY	= [ "distance", "altitude", "speed", "power" ]
+
+
+class ColorScale:
+	def __init__( self, series, smoothing = False, logscale = False ):
+		d	= series.copy()
+
+		if logscale:
+			d	= np.log( d )
+			d.replace( float( "-inf" ), 0, inplace = True )
+
+		if smoothing:
+			WNDW_LEN	= 120
+			WINDOW		= [ 0.5 * (np.cos( z ) + 1.0)	for z in np.linspace( -np.pi, np.pi, WNDW_LEN) ]
+			WINDOW		= [ x / sum( WINDOW ) for x in WINDOW ]
+
+			s	= []
+			
+			padding	= [ 0 for x in range( len( WINDOW ) // 2 ) ]
+			s.extend( padding )
+			
+			s.extend( smooth( d, WINDOW ) )
+			
+			padding	= [ s[ -1 ] for x in range( len( WINDOW ) // 2 ) ]
+			s.extend( padding )
+			
+			self.series	= pd.Series( s )
+
+		else:
+			self.series	= d
+
+		self.min	= self.series.min()
+		self.max	= self.series.max()
+		self.fullscale	= self.max - self.min
+		self.series	-= self.min
+		self.series	/= self.fullscale
+		
+	def ratio( self, count ):
+		return self.series[ count ]
 
 
 def main():	
@@ -73,12 +115,28 @@ def main():
 	elif ".gpx" == file_suffix:
 		data, s_data, units	= gpxpandas.get_course( args.input_file )
 
-	data[ "distance" ]	= data[ "distance" ].apply( lambda x: x / 1000.0 )	# convert from meter to kilometer
+	data[ "distance" ]	/= 1000.0	# convert from meter to kilometer
+	data[ "speed" ]		*= 3.6		# convert from m/s to km/h
 
 	#####
 	##### plot range calculation
 	#####
 	if not args.quiet: print( "calculating plot range..." )
+	
+	if args.color_key not in data.columns:
+		print( "WARNING:" )
+		print( "  color key: \"{}\" was specified but not available.".format( args.color_key ) )
+		print( "  default key \"{}\" had been chosen for plot".format( "distance" ) )
+		print( "  available keying data are.. {}".format( set(COLORKEY) & set(data.columns) ) )
+		args.color_key	= "distance"
+	
+	if args.color_key != "distance":
+		REQUIRED_DATA_COLUMNS.append( args.color_key )
+	if args.color_key in [ "speed", "power" ]:
+		max	= data[ "speed" ].max()
+		mean	= data[ "speed" ].mean()
+		lim		= mean - (max - mean)
+		data.loc[ data[ "speed" ] < lim, "speed" ] = float( "NaN" )
 
 	data	= data.dropna( subset = REQUIRED_DATA_COLUMNS )
 	data	= data[ (data[ "distance" ] >= args.start) & (data[ "distance" ] <= args.fin) ]
@@ -95,11 +153,6 @@ def main():
 	#####
 	fig	= plt.figure( figsize=( 11, 11 ) )
 	ax	= fig.add_subplot( 111, projection = "3d" )
-
-	# ax.set_title( "course plot of " + args.input_file  )
-	fig.text( 0.2, 0.92, "course plot by \"" + args.input_file + "\"", fontsize = 9, alpha = 0.5, ha = "left", va = "top" )	
-	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )	
-	fig.text( 0.8, 0.1, FOOTNOTE + "\n" + (OSM_CREDIT if args.map_resolution != "off" else ""), fontsize = 9, alpha = 0.5, ha = "right" )	
 
 	if not args.quiet:
 		print( "plot values:" )
@@ -124,7 +177,11 @@ def main():
 	if not args.quiet: print( "3D prot in progress..." )
 	plot( ax, data, lim_val )
 
-
+	# ax.set_title( "course plot of " + args.input_file  )
+	fig.text( 0.2, 0.92, "course plot by \"{}\"\n * curtain color: \"{}\"".format( args.input_file, args.color_key ), fontsize = 9, alpha = 0.5, ha = "left", va = "top" )
+	fig.text( 0.8, 0.92, info( s_data, lim_val ), fontsize = 9, alpha = 0.5, ha = "right", va = "top" )
+	fig.text( 0.8, 0.1, FOOTNOTE + "\n" + (OSM_CREDIT if args.map_resolution != "off" else ""), fontsize = 9, alpha = 0.5, ha = "right" )
+	
 	#####
 	##### output to file | screen
 	#####
@@ -220,30 +277,33 @@ def plot( ax, data, lv ):
 	ax.set_ylim( [ lv[ "south"  ],  lv[ "north" ] ] )
 	ax.set_zlim( [ lv[ "bottom" ],  lv[ "top"   ] ] )
 
-	"""
-	trace_lngth	= len( data[ "altitude" ] )
-	cm			= plt.get_cmap( "jet" )
-	cm_interval	= [ i / trace_lngth for i in range(1, trace_lngth + 1) ]
-	cm			= cm( cm_interval )
-	"""
-	cm	= fu.color_map( len( data[ "altitude" ] ) )
+	COLORS	= 360
+	COLOR_REVERSE	= [ "altitude", "speed" ]
 	
+	cm	= fu.color_map( COLORS + 1 )
+	
+	if args.color_key in COLOR_REVERSE:
+		cm.reverse()
+	
+	smoothing_flag	= True if args.color_key == "power" else False
+	col_scale	= ColorScale( data[ args.color_key ], smoothing = smoothing_flag, logscale = False )
+
 	dist_marker	= (ds[ 0 ] // dm_interval + 1) * dm_interval
 	dm_format	= dmformat( dm_interval )
 
 	xs	= data[ "long_km"  ].tolist()
 	ys	= data[ "lat_km"   ].tolist()
 	zs	= data[ "altitude" ].tolist()
+	cs	= [ cm[ int(COLORS * col_scale.ratio( i ) ) ] for i in range( len( zs ) ) ]
 
 	count		= 0
 	 
 	z_min	= lv[ "bottom" ]
-	for x, y, z in zip( xs, ys, zs ):
-		cc	= cm[ count ]
-		
+	for x, y, z, cc in zip( xs, ys, zs, cs ):
 		ax.plot( [ x, x ], [ y, y ], [ z, z_min ], color = cc, alpha = args.curtain_alpha )
 		
 		if ( dist_marker < ds[ count ] ):
+			if args.color_key != "distance": cc	= [ 0.5, 0.5, 0.5 ]
 			marktext( ax, xs[  count ], ys[ count ], zs[ count ], 10, (dm_format % dist_marker) + "km", 10, cc, 0.99, "center" )
 			dist_marker	+= dm_interval
 
@@ -260,8 +320,8 @@ def plot( ax, data, lv ):
 	marktext( ax, lv[ "h_cntr" ], lv[ "south"  ], z_min, 0, "S", 12, [ 0, 0, 0 ], 0.2, "center" )
 	marktext( ax, lv[ "h_cntr" ], lv[ "north"  ], z_min, 0, "N", 12, [ 0, 0, 0 ], 0.2, "center" )
 	
-	ax.set_xlabel( "longitude (-):west / (+): east\n[km]"  )
-	ax.set_ylabel( "latiitude (-):south / (+): north\n[km]" )
+	ax.set_xlabel( "[km]\nlongitude (-):west / (+): east"  )
+	ax.set_ylabel( "[km]\nlatiitude (-):south / (+): north" )
 	ax.set_zlabel( "altitude [m]" )
 	ax.grid()
 
@@ -351,21 +411,20 @@ def get_map( axis, size_idx, lv ):
 
 	return	arr
 
-
 def command_line_handling():
 	parser	= argparse.ArgumentParser( description = "plots 3D course map in from .fit file" )
 	qv_grp	= parser.add_mutually_exclusive_group()
-	
 	parser.add_argument( "input_file",				help = "input file (.fit or .gpx format)" )
 	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, default =  60 )
 	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86 )
-	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",		choices=[ "low", "mid", "high", "off" ], default = "low" )
-	parser.add_argument( "-f", "--alt_filt",		help = "altitude filtering",	choices=[ "norm", "avg", "off" ], default = "avg" )
+	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",		choices = [ "low", "mid", "high", "off" ], default = "low" )
+	parser.add_argument( "-f", "--alt_filt",		help = "altitude filtering",	choices = [ "norm", "avg", "off" ], default = "avg" )
 	parser.add_argument(       "--start",			help = "set start point", 					type = float, default =   0 )
 	parser.add_argument(       "--fin",				help = "set finish point", 					type = float, default = float("inf") )
 	parser.add_argument( "-t", "--thining_factor",	help = "data point thining out ratio",		type = int,   default =   1 )
 	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1 )
 	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
+	parser.add_argument(       "--color_key",		help = "color keying data", 	choices = COLORKEY, default = "distance" )
 	parser.add_argument( "-n", "--negative_alt",	help = "negative altitude enable",	action = "store_true" )
 	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",		action = "store_true" )
 	parser.add_argument( "-p", "--pickle_output",	help = "output to .pickle = ON",	action = "store_true" )
@@ -428,7 +487,11 @@ def make_gif_mp( base_name, fig ):
 	subprocess.call( cmd, shell = True ) 
 	subprocess.call( "rm -rf " + dir_name, shell=True )
 	
-	
+
+def smooth( d, w ):
+	return np.convolve( d, w, mode = 'same' )[ len( w )// 2 : -len( w ) // 2 ]
+
+
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
