@@ -8,6 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
+# Version 0.21 22-Decemer-2021  # code cleaned (in marker plotting loop)
 # Version 0.20 19-Decemer-2021  # curtain color can be changed by altitude/speed/power
 # Version 0.14 14-March-2021
 
@@ -288,7 +289,6 @@ def plot( ax, data, lv ):
 	smoothing_flag	= True if args.color_key == "power" else False
 	col_scale	= ColorScale( data[ args.color_key ], smoothing = smoothing_flag, logscale = False )
 
-	dist_marker	= (ds[ 0 ] // dm_interval + 1) * dm_interval
 	dm_format	= dmformat( dm_interval )
 
 	xs	= data[ "long_km"  ].tolist()
@@ -296,19 +296,20 @@ def plot( ax, data, lv ):
 	zs	= data[ "altitude" ].tolist()
 	cs	= [ cm[ int(COLORS * col_scale.ratio( i ) ) ] for i in range( len( zs ) ) ]
 
-	count		= 0
-	 
+	m_val	= range( int(ds[ 0 ] / dm_interval + 1) * dm_interval, int(ds[ -1 ] / dm_interval) * dm_interval, dm_interval )
+	m_dic	= marker_index( ds, m_val )
+	
 	z_min	= lv[ "bottom" ]
 	for x, y, z, cc in zip( xs, ys, zs, cs ):
 		ax.plot( [ x, x ], [ y, y ], [ z, z_min ], color = cc, alpha = args.curtain_alpha )
-		
-		if ( dist_marker < ds[ count ] ):
-			if args.color_key != "distance": cc	= [ 0.5, 0.5, 0.5 ]
-			marktext( ax, xs[  count ], ys[ count ], zs[ count ], 10, (dm_format % dist_marker) + "km", 10, cc, 0.99, "center" )
-			dist_marker	+= dm_interval
 
-		count	+= 1
+	if args.color_key != "distance":
+		for v, i in m_dic.items():
+			cs[ i ]	= [ 0.5, 0.5, 0.5 ]
 	
+	for v, i in m_dic.items():
+		marktext( ax, xs[ i ], ys[ i ], zs[ i ], 10, (dm_format % v) + "km", 10, cs[ i ], 0.99, "center" )
+
 	ax.plot( xs, ys, z_min, color = [ 0, 0, 0 ], alpha = 0.1 )	# course shadow plot on bottom
 	ax.plot( xs, ys, zs,    color = [ 0, 0, 0 ], alpha = 0.2 )	# course plot on trace edge
 	
@@ -339,7 +340,7 @@ def findinterval( x ):
 	
 	r	*= (10 ** (e-1))
 	
-	return ( r )
+	return ( int( r ) )
 
 
 def dmformat( di ):
@@ -491,6 +492,11 @@ def make_gif_mp( base_name, fig ):
 def smooth( d, w ):
 	return np.convolve( d, w, mode = 'same' )[ len( w )// 2 : -len( w ) // 2 ]
 
+
+def marker_index( data, marker_list ):
+	d	= np.array( data )
+	idx	= [ np.argmin( np.abs( d - v ) ) for v in marker_list ]
+	return dict( zip( marker_list, idx ) )
 
 if __name__ == "__main__":
 	args	= command_line_handling()
