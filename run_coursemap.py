@@ -8,6 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
+# Version 0.22 24-Decemer-2021  # color bar added
 # Version 0.21 22-Decemer-2021  # code cleaned (in marker plotting loop)
 # Version 0.20 19-Decemer-2021  # curtain color can be changed by altitude/speed/power
 # Version 0.14 14-March-2021
@@ -33,6 +34,8 @@ import	subprocess
 import	pickle
 import	pandas as pd
 
+import	time
+
 
 FOOTNOTE		= "plotted by 'run_coursemap'\nhttps://github.com/teddokano/run_coursemap"
 OSM_CREDIT		= "Maps & data © OpenStreetMap contributors"
@@ -47,7 +50,8 @@ REQUIRED_DATA_COLUMNS	= [
 	"position_lat"
 ]
 
-COLORKEY	= [ "distance", "altitude", "speed", "power" ]
+#COLORKEY	= [ "distance", "altitude", "speed", "power" ]
+COLORKEY	= { "distance": "km", "altitude": "m", "speed": "km/h", "power": "W" }
 
 
 class ColorScale:
@@ -83,7 +87,7 @@ class ColorScale:
 		self.fullscale	= self.max - self.min
 		self.series	-= self.min
 		self.series	/= self.fullscale
-		
+
 	def ratio( self, count ):
 		return self.series[ count ]
 
@@ -128,7 +132,7 @@ def main():
 		print( "WARNING:" )
 		print( "  color key: \"{}\" was specified but not available.".format( args.color_key ) )
 		print( "  default key \"{}\" had been chosen for plot".format( "distance" ) )
-		print( "  available keying data are.. {}".format( set(COLORKEY) & set(data.columns) ) )
+		print( "  available keying data are.. {}".format( set(COLORKEY.keys()) & set(data.columns) ) )
 		args.color_key	= "distance"
 	
 	if args.color_key != "distance":
@@ -144,7 +148,8 @@ def main():
 	data.reset_index( inplace = True, drop = True )	
 
 	lim_val	= fu.limit_values( data, args )
-
+	lim_val[ "sport" ]	= s_data[ "sport" ]	# tentative implementation for colorbar drawing
+	
 	if args.screen_off and not args.output_to_file:
 		print( "no plot processed since \"--screen_off\" option given without \"-o\" (output to file)" )
 		return	# do nothing and quit
@@ -300,9 +305,15 @@ def plot( ax, data, lv ):
 	m_dic	= marker_index( ds, m_val )
 	
 	z_min	= lv[ "bottom" ]
+	
+
+	colorbar( ax, cm, lv, col_scale.min, col_scale.max )
+
+#	t = time.time()
 	for x, y, z, cc in zip( xs, ys, zs, cs ):
 		ax.plot( [ x, x ], [ y, y ], [ z, z_min ], color = cc, alpha = args.curtain_alpha )
 
+#	print( "elapsed time {}".format( time.time() - t ) )
 	if args.color_key != "distance":
 		for v, i in m_dic.items():
 			cs[ i ]	= [ 0.5, 0.5, 0.5 ]
@@ -325,6 +336,54 @@ def plot( ax, data, lv ):
 	ax.set_ylabel( "[km]\nlatiitude (-):south / (+): north" )
 	ax.set_zlabel( "altitude [m]" )
 	ax.grid()
+
+
+def colorbar( ax, cm, lv, min, max ):
+	span_x		= lv[ "east"  ] - lv[ "west"  ]
+	span_y		= lv[ "north" ] - lv[ "south" ]
+	start_x		= lv[ "west"  ] + span_x * 0.25
+	center_x	= lv[ "west"  ] + span_x * 0.50
+	end_x		= lv[ "west"  ] + span_x * 0.75
+	start_y		= lv[ "south" ] + span_y * 0.25
+	center_y	= lv[ "south" ] + span_y * 0.50
+	end_y		= lv[ "south" ] + span_y * 0.75
+	bottom		= lv[ "bottom" ]
+
+	d	= pd.DataFrame()
+	d[ "i" ]	= range( 360 )
+	d[ "x" ]	= np.linspace( start_x,  end_x, 360 )
+	d[ "y" ]	= np.linspace( start_y,  end_y, 360 )
+	
+	width	= 0.02
+	
+	x_ref	= lv[ "east"  ]
+	y_ref	= lv[ "north" ]
+	
+	for i, x in zip( d[ "i" ], d[ "x" ].to_list() ):
+		ax.plot( [ x, x ], [ y_ref, y_ref - span_y * width ], [ bottom, bottom ], color = cm[ i ], alpha = 0.5 )
+
+	for i, y in zip( d[ "i" ], d[ "y" ].to_list() ):
+		ax.plot( [ x_ref, x_ref - span_x * width ], [ y, y ], [ bottom, bottom ], color = cm[ i ], alpha = 0.5 )
+
+	if lv["sport"] == "running" and args.color_key == "speed":
+		lbl	= "pace"
+		min	= "{}/km".format( fu.second2MS( fu.speed2pace( min / 3.6 ) ) )
+		max	= "{}/km".format( fu.second2MS( fu.speed2pace( max / 3.6 ) ) )
+	else:
+		lbl	= args.color_key
+		min	= "{:.1f}{}".format( min, COLORKEY[ args.color_key ] )
+		max	= "{:.1f}{}".format( max, COLORKEY[ args.color_key ] )
+
+	size	= 9
+	color	= [ 0, 0, 0 ]
+	alpha	= 0.4
+	pos		= "center"
+	marktext( ax, start_x,  y_ref,    bottom, 0, min, size, color, alpha, pos )
+	marktext( ax, end_x,    y_ref,    bottom, 0, max, size, color, alpha, pos )
+	marktext( ax, center_x, y_ref,    bottom, 0, lbl, size, color, alpha, pos )
+	marktext( ax, x_ref,    start_y,  bottom, 0, min, size, color, alpha, pos )
+	marktext( ax, x_ref,    end_y,    bottom, 0, max, size, color, alpha, pos )
+	marktext( ax, x_ref,    center_y, bottom, 0, lbl, size, color, alpha, pos )
 
 
 def findinterval( x ):
@@ -425,7 +484,7 @@ def command_line_handling():
 	parser.add_argument( "-t", "--thining_factor",	help = "data point thining out ratio",		type = int,   default =   1 )
 	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1 )
 	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
-	parser.add_argument(       "--color_key",		help = "color keying data", 	choices = COLORKEY, default = "distance" )
+	parser.add_argument(       "--color_key",		help = "color keying data", 	choices = COLORKEY.keys(), default = "distance" )
 	parser.add_argument( "-n", "--negative_alt",	help = "negative altitude enable",	action = "store_true" )
 	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",		action = "store_true" )
 	parser.add_argument( "-p", "--pickle_output",	help = "output to .pickle = ON",	action = "store_true" )
@@ -497,6 +556,7 @@ def marker_index( data, marker_list ):
 	d	= np.array( data )
 	idx	= [ np.argmin( np.abs( d - v ) ) for v in marker_list ]
 	return dict( zip( marker_list, idx ) )
+	
 
 if __name__ == "__main__":
 	args	= command_line_handling()
