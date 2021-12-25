@@ -8,6 +8,7 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
+# Version 0.23 25-Decemer-2021  # colorbar option switch added / "heart_rate" added for color_key
 # Version 0.22 24-Decemer-2021  # color bar added
 # Version 0.21 22-Decemer-2021  # code cleaned (in marker plotting loop)
 # Version 0.20 19-Decemer-2021  # curtain color can be changed by altitude/speed/power
@@ -33,6 +34,7 @@ from 	timezonefinder import TimezoneFinder
 import	subprocess
 import	pickle
 import	pandas as pd
+import	re
 
 import	time
 
@@ -50,8 +52,7 @@ REQUIRED_DATA_COLUMNS	= [
 	"position_lat"
 ]
 
-#COLORKEY	= [ "distance", "altitude", "speed", "power" ]
-COLORKEY	= { "distance": "km", "altitude": "m", "speed": "km/h", "power": "W" }
+COLORKEY	= { "distance": "km", "altitude": "m", "speed": "km/h", "power": "W", "heart_rate": "bpm" }
 
 
 class ColorScale:
@@ -92,7 +93,7 @@ class ColorScale:
 		return self.series[ count ]
 
 
-def main():	
+def main():
 	file_name, file_ext = os.path.splitext( args.input_file )
 
 	print_v( "\"{}\" started".format( sys.argv[ 0 ] )  )
@@ -305,15 +306,49 @@ def plot( ax, data, lv ):
 	m_dic	= marker_index( ds, m_val )
 	
 	z_min	= lv[ "bottom" ]
-	
 
-	colorbar( ax, cm, lv, col_scale.min, col_scale.max )
+	w	= 0.01
+	r	= 0.8
+
+	if ( args.colorbar != "off" ):
+		direction	= args.colorbar
+
+		if ( direction == None ):
+			if ( args.azimuth != None ):
+				dir	= [ "e", "n", "w", "s" ]
+				pos0	= dir[ int( (args.azimuth        % 360) / 90 ) ]
+				pos1	= dir[ int( ((args.azimuth + 90) % 360) / 90 ) ]
+				direction	= "{}{}".format( pos0, pos1 )
+			else:
+				direction	= "se"
+	
+		if args.colorbarall: direction	= "nsew"
+
+		direction	= re.findall( "[n]|[s]|[e]|[w]", direction )
+
+		for p in direction:
+			colorbar( ax, cm, lv, col_scale.min, col_scale.max, position = p, ratio = r, width = w )
+
+	if ( args.colorbarV != "off" ):
+		vc		= [ "se", "nw", "ne", "sw", "wn", "es", "ws", "en" ]
+		if ( args.colorbarV not in vc ):
+			corner	= [ vc[ int( (args.azimuth % 360) / 45 ) ] ]
+		else:
+			corner	= [ args.colorbarV ]
+	
+		if args.colorbarall: corner	= [ "ne", "nw", "se", "sw" ]
+
+		for c in corner:
+			colorbar( ax, cm, lv, col_scale.min, col_scale.max, orientation = "vertical", corner = c, ratio = 1, width = w )
+
 
 #	t = time.time()
+
 	for x, y, z, cc in zip( xs, ys, zs, cs ):
 		ax.plot( [ x, x ], [ y, y ], [ z, z_min ], color = cc, alpha = args.curtain_alpha )
 
 #	print( "elapsed time {}".format( time.time() - t ) )
+
 	if args.color_key != "distance":
 		for v, i in m_dic.items():
 			cs[ i ]	= [ 0.5, 0.5, 0.5 ]
@@ -338,32 +373,83 @@ def plot( ax, data, lv ):
 	ax.grid()
 
 
-def colorbar( ax, cm, lv, min, max ):
-	span_x		= lv[ "east"  ] - lv[ "west"  ]
-	span_y		= lv[ "north" ] - lv[ "south" ]
-	start_x		= lv[ "west"  ] + span_x * 0.25
-	center_x	= lv[ "west"  ] + span_x * 0.50
-	end_x		= lv[ "west"  ] + span_x * 0.75
-	start_y		= lv[ "south" ] + span_y * 0.25
-	center_y	= lv[ "south" ] + span_y * 0.50
-	end_y		= lv[ "south" ] + span_y * 0.75
-	bottom		= lv[ "bottom" ]
-
+def colorbar( ax, cm, lv, min, max, orientation = "horizontal", corner = "ne", position = "n", width = 0.02, ratio = 0.5, alpha = 0.5 ):
+	pos	= { "n": "north", "s": "south", "e": "east", "w": "west" }
+	position	= pos[ position ]
+	
 	d	= pd.DataFrame()
 	d[ "i" ]	= range( 360 )
-	d[ "x" ]	= np.linspace( start_x,  end_x, 360 )
-	d[ "y" ]	= np.linspace( start_y,  end_y, 360 )
 	
-	width	= 0.02
-	
-	x_ref	= lv[ "east"  ]
-	y_ref	= lv[ "north" ]
-	
-	for i, x in zip( d[ "i" ], d[ "x" ].to_list() ):
-		ax.plot( [ x, x ], [ y_ref, y_ref - span_y * width ], [ bottom, bottom ], color = cm[ i ], alpha = 0.5 )
+	if orientation == "horizontal":
+		if position == "north" or position == "south":
+			span_x		= lv[ "east" ] - lv[ "west" ]
+			start_x		= lv[ "west" ] + span_x * (1 - ratio) * 0.5
+			end_x		= lv[ "east" ] - span_x * (1 - ratio) * 0.5
+			center_x	= lv[ "west" ] + span_x * 0.5
 
-	for i, y in zip( d[ "i" ], d[ "y" ].to_list() ):
-		ax.plot( [ x_ref, x_ref - span_x * width ], [ y, y ], [ bottom, bottom ], color = cm[ i ], alpha = 0.5 )
+			span_x		= 0
+
+			span_y		= (lv[ "north" ] - lv[ "south" ]) * width
+			start_y		= lv[ position ]
+			center_y	= lv[ position ]
+			end_y		= lv[ position ]
+
+			d[ "x" ]	= np.linspace( start_x,  end_x, 360 )
+			d[ "y" ]	= lv[ position ]
+			d[ "z" ]	= lv[ "bottom" ]
+
+		else:
+			span_y		= lv[ "north" ] - lv[ "south" ]
+			start_y		= lv[ "south" ] + span_y * (1 - ratio) * 0.5
+			end_y		= lv[ "north" ] - span_y * (1 - ratio) * 0.5
+			center_y	= lv[ "south" ] + span_y * 0.5
+
+			span_y		= 0
+
+			span_x		= (lv[ "east" ] - lv[ "west" ]) * width
+			start_x		= lv[ position ]
+			center_x	= lv[ position ]
+			end_x		= lv[ position ]
+
+			d[ "x" ]	= lv[ position ]
+			d[ "y" ]	= np.linspace( start_y,  end_y, 360 )
+			d[ "z" ]	= lv[ "bottom" ]
+		
+		start_z		= lv[ "bottom" ]
+		end_z		= lv[ "bottom" ]
+		center_z	= lv[ "bottom" ]
+	else:
+		span_z		= lv[ "top"    ] - lv[ "bottom"  ]
+		start_z		= lv[ "bottom" ] + span_z * (1 - ratio) * 0.5
+		end_z		= lv[ "top"    ] - span_z * (1 - ratio) * 0.5
+		center_z	= lv[ "bottom" ] + span_z * 0.5
+
+		xc	= "east"  if "e" in corner else "west"
+		yc	= "north" if "n" in corner else "south"
+
+		span_x		= (lv[ "east"  ] - lv[ "west"  ]) * width
+		span_y		= (lv[ "north" ] - lv[ "south" ]) * width
+
+		span_x		*= 1 if xc == "east"  else -1
+		span_y		*= 1 if yc == "north" else -1
+
+		d[ "x" ]	= lv[ xc ]
+		d[ "y" ]	= lv[ yc ]
+		d[ "z" ]	= np.linspace( start_z,  end_z, 360 )
+
+		start_x		= lv[ xc ]
+		center_x	= lv[ xc ]
+		end_x		= lv[ xc ]
+		start_y		= lv[ yc ]
+		end_y		= lv[ yc ]
+		center_y	= lv[ yc ]
+
+	if position == "south" or position == "west":
+		span_x	*= -1
+		span_y	*= -1
+
+	for i, x, y, z in zip( d[ "i" ], d[ "x" ].to_list(), d[ "y" ].to_list(), d[ "z" ].to_list() ):
+		ax.plot( [ x, x  + span_x ], [ y, y + span_y ], [ z, z ], color = cm[ i ], alpha = alpha )
 
 	if lv["sport"] == "running" and args.color_key == "speed":
 		lbl	= "pace"
@@ -376,14 +462,10 @@ def colorbar( ax, cm, lv, min, max ):
 
 	size	= 9
 	color	= [ 0, 0, 0 ]
-	alpha	= 0.4
 	pos		= "center"
-	marktext( ax, start_x,  y_ref,    bottom, 0, min, size, color, alpha, pos )
-	marktext( ax, end_x,    y_ref,    bottom, 0, max, size, color, alpha, pos )
-	marktext( ax, center_x, y_ref,    bottom, 0, lbl, size, color, alpha, pos )
-	marktext( ax, x_ref,    start_y,  bottom, 0, min, size, color, alpha, pos )
-	marktext( ax, x_ref,    end_y,    bottom, 0, max, size, color, alpha, pos )
-	marktext( ax, x_ref,    center_y, bottom, 0, lbl, size, color, alpha, pos )
+	marktext( ax, start_x,  start_y,  start_z,  0, min, size, color, alpha, pos )
+	marktext( ax, end_x,    end_y,    end_z,    0, max, size, color, alpha, pos )
+	marktext( ax, center_x, center_y, center_z, 0, lbl, size, color, alpha, pos )
 
 
 def findinterval( x ):
@@ -484,7 +566,10 @@ def command_line_handling():
 	parser.add_argument( "-t", "--thining_factor",	help = "data point thining out ratio",		type = int,   default =   1 )
 	parser.add_argument( "-b", "--map_alpha",		help = "view setting: map alpha on base", 	type = float, default = 0.1 )
 	parser.add_argument( "-c", "--curtain_alpha",	help = "view setting: curtain alpha", 		type = float, default = 0.1 )
-	parser.add_argument(       "--color_key",		help = "color keying data", 	choices = COLORKEY.keys(), default = "distance" )
+	parser.add_argument( "-k", "--color_key",		help = "color keying data", 	choices = COLORKEY.keys(), default = "distance" )
+	parser.add_argument(       "--colorbar",		help = "horizontal colorbar position", type=ascii )
+	parser.add_argument(       "--colorbarV",		help = "vertical colorbar position" )
+	parser.add_argument(       "--colorbarall",		help = "show colorbar all sides",	action = "store_true" )
 	parser.add_argument( "-n", "--negative_alt",	help = "negative altitude enable",	action = "store_true" )
 	parser.add_argument( "-o", "--output_to_file",	help = "output to file = ON",		action = "store_true" )
 	parser.add_argument( "-p", "--pickle_output",	help = "output to .pickle = ON",	action = "store_true" )
@@ -561,4 +646,4 @@ def marker_index( data, marker_list ):
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
-
+	
