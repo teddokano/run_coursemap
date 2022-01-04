@@ -8,13 +8,14 @@
 # usage:  run_coursemap.py data.fit
 #
 # Tedd OKANO, Tsukimidai Communications Syndicate 2021
-# Version 0.23 25-Decemer-2021  # colorbar option switch added / "heart_rate" added for color_key
-# Version 0.22 24-Decemer-2021  # color bar added
-# Version 0.21 22-Decemer-2021  # code cleaned (in marker plotting loop)
-# Version 0.20 19-Decemer-2021  # curtain color can be changed by altitude/speed/power
+# Version 0.24 04-January-2022   # z-axis data can be changed
+# Version 0.23 25-December-2021  # colorbar option switch added / "heart_rate" added for color_key
+# Version 0.22 24-December-2021  # color bar added
+# Version 0.21 22-December-2021  # code cleaned (in marker plotting loop)
+# Version 0.20 19-December-2021  # curtain color can be changed by altitude/speed/power
 # Version 0.14 14-March-2021
 
-# Copyright (c) 2021 Tedd OKANO
+# Copyright (c) 2021-2022 Tedd OKANO
 # Released under the MIT license
 # https://opensource.org/licenses/mit-license.php
 
@@ -121,6 +122,8 @@ def main():
 	elif ".gpx" == file_suffix:
 		data, s_data, units	= gpxpandas.get_course( args.input_file )
 
+	print_v( "available data {}".format( data.columns.to_list() ) )
+
 	data[ "distance" ]	/= 1000.0	# convert from meter to kilometer
 	data[ "speed" ]		*= 3.6		# convert from m/s to km/h
 
@@ -135,6 +138,9 @@ def main():
 		print( "  default key \"{}\" had been chosen for plot".format( "distance" ) )
 		print( "  available keying data are.. {}".format( set(COLORKEY.keys()) & set(data.columns) ) )
 		args.color_key	= "distance"
+	
+	if args.z_axis != "altitude":
+		args.color_key	= args.z_axis
 	
 	if args.color_key != "distance":
 		REQUIRED_DATA_COLUMNS.append( args.color_key )
@@ -299,7 +305,18 @@ def plot( ax, data, lv ):
 
 	xs	= data[ "long_km"  ].tolist()
 	ys	= data[ "lat_km"   ].tolist()
-	zs	= data[ "altitude" ].tolist()
+#	zs	= data[ args.z_axis ].tolist()
+
+	if args.z_axis != "altitude":
+		zs	 = pd.Series( data[ args.z_axis ] )
+		zs	-= zs.min()
+		zs	/= zs.max()
+		zs	*= (data[ "altitude" ].max() - data[ "altitude" ].min())
+		zs	+= data[ "altitude" ].min()
+		zs	 = zs.tolist()
+	else:
+		zs	= data[ "altitude" ].tolist()
+
 	cs	= [ cm[ int(COLORS * col_scale.ratio( i ) ) ] for i in range( len( zs ) ) ]
 
 	m_val	= range( int(ds[ 0 ] / dm_interval + 1) * dm_interval, int(ds[ -1 ] / dm_interval) * dm_interval, dm_interval )
@@ -356,9 +373,12 @@ def plot( ax, data, lv ):
 	for v, i in m_dic.items():
 		marktext( ax, xs[ i ], ys[ i ], zs[ i ], 10, (dm_format % v) + "km", 10, cs[ i ], 0.99, "center" )
 
+	if args.z_axis != "altitude":
+		zs	= data[ "altitude" ].tolist()
+		
 	ax.plot( xs, ys, z_min, color = [ 0, 0, 0 ], alpha = 0.1 )	# course shadow plot on bottom
 	ax.plot( xs, ys, zs,    color = [ 0, 0, 0 ], alpha = 0.2 )	# course plot on trace edge
-	
+
 	marktext( ax, xs[  0 ], ys[  0 ], zs[  0 ], 200, "start", 20, [ 0, 1, 0 ], 0.5, "left" )
 	marktext( ax, xs[ -1 ], ys[ -1 ], zs[ -1 ], 200, "fin",   20, [ 1, 0, 0 ], 0.5, "right" )
 	
@@ -557,6 +577,7 @@ def command_line_handling():
 	parser	= argparse.ArgumentParser( description = "plots 3D course map in from .fit file" )
 	qv_grp	= parser.add_mutually_exclusive_group()
 	parser.add_argument( "input_file",				help = "input file (.fit or .gpx format)" )
+	parser.add_argument( "-z", "--z_axis",			help = "z_axis data", 	choices = COLORKEY.keys(), default = "altitude" )
 	parser.add_argument( "-e", "--elevation",		help = "view setting: elevation", 			type = float, default =  60 )
 	parser.add_argument( "-a", "--azimuth",			help = "view setting: azimuth", 			type = float, default = -86 )
 	parser.add_argument( "-m", "--map_resolution",	help = "map resolution",		choices = [ "low", "mid", "high", "off" ], default = "low" )
@@ -646,4 +667,4 @@ def marker_index( data, marker_list ):
 if __name__ == "__main__":
 	args	= command_line_handling()
 	main()
-	
+
